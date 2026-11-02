@@ -74,7 +74,6 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
 
     private void HideRecoveryControls()
         => Layer.QueueFree();
-}
 
     private static void RestartApp()
     {
@@ -83,3 +82,4 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
         else
             AndroidGodotAppBridge.RestartApp();
     }
+}

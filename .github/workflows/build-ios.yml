@@ -34,7 +34,15 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Restore Cached Native iOS Libraries (Mono & Godot)
+        id: cache-ios-libs
+        uses: actions/cache/restore@v4
+        with:
+          path: ios/libs
+          key: ios-libs-v2-${{ hashFiles('scripts/build-ios-mono.sh', 'scripts/build-godot-ios.sh', 'patches/mono/**', 'patches/godot/**') }}
+
       - name: Install SCons & Ninja
+        if: steps.cache-ios-libs.outputs.cache-hit != 'true'
         run: |
           python3 -m pip install --upgrade pip
           pip install scons ninja
@@ -44,6 +52,7 @@ jobs:
           chmod +x scripts/*.sh
 
       - name: Setup Godot Source
+        if: steps.cache-ios-libs.outputs.cache-hit != 'true'
         run: |
           ./scripts/setup-godot-source.sh
 
@@ -54,6 +63,13 @@ jobs:
       - name: Build Godot Engine for iOS
         run: |
           ./scripts/build-godot-ios.sh
+
+      - name: Save Native iOS Libraries to Cache
+        if: steps.cache-ios-libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ios/libs
+          key: ${{ steps.cache-ios-libs.outputs.cache-primary-key }}
 
       - name: Build STS2Launcher iOS & Package IPA
         run: |

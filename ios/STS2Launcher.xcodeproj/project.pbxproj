@@ -209,7 +209,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				VALIDATE_PRODUCT = YES;
+				VALIDATE_PRODUCT = NO;
 			};
 			name = Release;
 		};
@@ -238,6 +238,8 @@
 					"Metal",
 					"-framework",
 					"MetalFX",
+					"-framework",
+					"OpenGLES",
 					"-framework",
 					"QuartzCore",
 					"-framework",
@@ -296,6 +298,8 @@
 					"Metal",
 					"-framework",
 					"MetalFX",
+					"-framework",
+					"OpenGLES",
 					"-framework",
 					"QuartzCore",
 					"-framework",

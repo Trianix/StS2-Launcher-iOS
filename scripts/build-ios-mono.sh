@@ -14,6 +14,11 @@ ARCHIVE_URL="https://codeload.github.com/dotnet/runtime/tar.gz/$COMMIT"
 
 mkdir -p "$CACHE_DIR" "$IOS_LIBS"
 
+if [ -f "$IOS_LIBS/libmonosgen-2.0.a" ]; then
+    echo "Found cached Mono iOS library at $IOS_LIBS/libmonosgen-2.0.a, skipping build."
+    exit 0
+fi
+
 if [ ! -d "$SOURCE_DIR/.git" ]; then
     echo "Downloading pinned .NET runtime source ($COMMIT)..."
     ARCHIVE_FILE="$CACHE_DIR/runtime-$COMMIT.tar.gz"

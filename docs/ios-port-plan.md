@@ -41,12 +41,12 @@ flowchart TD
 
 ---
 
-### Phase 2: Engine & Native Runtime Compilation `[READY TO RUN]`
+### Phase 2: Engine & Native Runtime Compilation `[COMPLETED]`
 - [x] SCons iOS build script (`scripts/build-godot-ios.sh`) prepared.
 - [x] CMake Mono `ios-arm64` build script (`scripts/build-ios-mono.sh`) prepared.
-- [ ] Run Godot 4.5.1 iOS arm64 build and verify `libgodot.ios.template_release.arm64.a`.
-- [ ] Run Mono .NET 9 iOS arm64 build and verify `libmonosgen-2.0.a`.
-- [ ] Link `libgodot.a` and `libmonosgen-2.0.a` into `ios/libs/`.
+- [x] Run Godot 4.5.1 iOS arm64 build and verify `libgodot.ios.template_release.arm64.a`.
+- [x] Run Mono .NET 9 iOS arm64 build and verify `libmonosgen-2.0.a`.
+- [x] Link `libgodot.a` and `libmonosgen-2.0.a` into `ios/libs/`.
 
 ---
 

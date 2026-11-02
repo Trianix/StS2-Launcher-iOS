@@ -41,8 +41,18 @@ internal sealed partial class DepotDownloader : IDisposable
         _cdnClient = connection.CreateCdnClient();
     }
 
-    internal Task<BranchInstallCompletion> DownloadAsync(CancellationToken ct = default)
-        => RunWithSuspendedIdleTimeoutAsync(() => DownloadCoreAsync(ct));
+    internal async Task<BranchInstallCompletion> DownloadAsync(CancellationToken ct = default)
+    {
+        IOSGodotAppBridge.SetKeepScreenOn(true);
+        try
+        {
+            return await RunWithSuspendedIdleTimeoutAsync(() => DownloadCoreAsync(ct));
+        }
+        finally
+        {
+            IOSGodotAppBridge.SetKeepScreenOn(false);
+        }
+    }
 
     private async Task<BranchInstallCompletion> DownloadCoreAsync(CancellationToken ct)
     {

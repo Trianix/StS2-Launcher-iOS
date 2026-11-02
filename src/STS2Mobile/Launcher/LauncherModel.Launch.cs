@@ -120,6 +120,12 @@ internal partial class LauncherModel
             return LauncherLaunchHandoffResult.Failed(LauncherLaunchAttemptPhases.RestartRequestedWithoutReadyFiles, "Launch blocked because selected files were not ready in final bridge check", writePatchLog: true);
         }
 
+        if (OperatingSystem.IsIOS())
+        {
+            PatchHelper.Log("[Launcher iOS] Restart requested for newly prepared game files.");
+            IOSGodotAppBridge.RestartApp();
+            return LauncherLaunchHandoffResult.Success(LauncherLaunchAttemptPhases.RestartRequested);
+        }
         var acceptance = AndroidGodotAppBridge.RequestLaunchRestart(LauncherRestartRequest.Create(attemptId, safe, readiness));
         if (!acceptance.Accepted)
             return LauncherLaunchHandoffResult.Failed(LauncherLaunchAttemptPhases.LaunchHandoffFailed, string.IsNullOrWhiteSpace(acceptance.Error) ? "Android rejected the restart request." : acceptance.Error, writePatchLog: true);

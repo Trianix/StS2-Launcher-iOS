@@ -22,7 +22,27 @@ internal static class AppPaths
     private const string ModSelectionFileName = "mod_selection.json";
     private const string LastModLaunchFileName = "last_mod_launch.json";
 
-    internal const string ExternalModsDir = ExternalStorageRoot + "/Mods";
+    internal static string ExternalModsDir
+    {
+        get
+        {
+            if (OperatingSystem.IsIOS())
+            {
+                var docs = IOSGodotAppBridge.GetDocumentsDir();
+                if (!string.IsNullOrWhiteSpace(docs))
+                    return Path.Combine(docs, "StS2Launcher", "Mods");
+
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "StS2Launcher",
+                    "Mods"
+                );
+            }
+
+            return ExternalStorageRoot + "/Mods";
+        }
+    }
+
     internal static string AppPrivateWorkshopDownloadsDir =>
         WorkshopDownloadsDir(AppPrivateDataDir);
     internal static string AppPrivateWorkshopStagedModsDir =>
@@ -61,9 +81,12 @@ internal static class AppPaths
 
     internal static string AppPrivateDataDir => ResolveAppPrivateDataDirectory();
 
-    // Returns true if the app has permission to write to shared external storage.
+    // Returns true if the app has permission to write to storage.
     internal static bool HasStoragePermission()
     {
+        if (OperatingSystem.IsIOS())
+            return true;
+
         if (!OperatingSystem.IsAndroid())
             return false;
 
@@ -78,10 +101,12 @@ internal static class AppPaths
         }
     }
 
-    // Requests external storage permission. On Android 11+, opens the system
-    // settings page. On older versions, shows the runtime permission dialog.
+    // Requests external storage permission.
     internal static void RequestStoragePermission()
     {
+        if (OperatingSystem.IsIOS())
+            return;
+
         if (!OperatingSystem.IsAndroid())
             return;
 
@@ -123,6 +148,20 @@ internal static class AppPaths
             );
             if (BootstrapTrace.TryNormalizeDirectory(previewDataDir, out var normalizedPreviewDataDir))
                 return normalizedPreviewDataDir;
+        }
+
+        if (OperatingSystem.IsIOS())
+        {
+            try
+            {
+                var iosUserData = IOSGodotAppBridge.GetUserDataDir();
+                if (BootstrapTrace.TryNormalizeDirectory(iosUserData, out var normalizedIosDir))
+                    return normalizedIosDir;
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[Storage] iOS user data bridge unavailable: {ex.Message}");
+            }
         }
 
         if (OperatingSystem.IsAndroid())

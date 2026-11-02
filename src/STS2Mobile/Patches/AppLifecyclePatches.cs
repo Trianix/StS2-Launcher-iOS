@@ -139,7 +139,10 @@ internal static partial class AppLifecyclePatches
             try
             {
                 PatchHelper.Log("Restarting launcher after NGame.Quit");
-                AndroidGodotAppBridge.RestartApp();
+                if (OperatingSystem.IsIOS())
+                    IOSGodotAppBridge.RestartApp();
+                else
+                    AndroidGodotAppBridge.RestartApp();
             }
             catch (Exception ex)
             {

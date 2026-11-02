@@ -17,8 +17,8 @@ internal static partial class LauncherDiagnostics
     private const string SummaryFileStatusPrefix = "  ";
     private const string Unavailable = "<unavailable>";
     private const string Unknown = "<unknown>";
-    private static string AndroidAppVersion(string versionName) => $"Android app version: {versionName ?? Unknown}";
-    private static string AndroidBridgeFailed(Exception ex) => $"Android bridge diagnostics failed: {ex.Message}";
+    private static string AndroidAppVersion(string versionName) => $"App version: {versionName ?? Unknown}";
+    private static string AndroidBridgeFailed(Exception ex) => $"Bridge diagnostics failed: {ex.Message}";
     private static string ExternalFilesDir(string path) => $"External files dir: {path ?? None}";
     private static string Header(string label, string path) => $"{label}: {path}";
     private static string LogcatCollectionFailed(Exception ex) => $"<failed to collect logcat: {ex.Message}>";
@@ -34,11 +34,23 @@ internal static partial class LauncherDiagnostics
             sb.AppendLine(AndroidBridgeFailed(ex));
         }
 
-        AppendLogcatTail(sb, AndroidLogcatTail, AndroidBridgeTailLines, leadingBlank: true);
+        if (OperatingSystem.IsAndroid())
+        {
+            AppendLogcatTail(sb, AndroidLogcatTail, AndroidBridgeTailLines, leadingBlank: true);
+        }
     }
 
     private static void AppendAndroidBridgeMetadata(StringBuilder sb, string dataDir)
     {
+        if (OperatingSystem.IsIOS())
+        {
+            sb.AppendLine($"iOS app version: {IOSGodotAppBridge.GetVersionName()}");
+            sb.AppendLine($"iOS device diagnostics: {IOSGodotAppBridge.GetDeviceDiagnostics()}");
+            sb.AppendLine($"Documents dir: {IOSGodotAppBridge.GetDocumentsDir()}");
+            sb.AppendLine(UsableDataBytes(IOSGodotAppBridge.GetUsableSpaceBytes(dataDir)));
+            return;
+        }
+
         sb.AppendLine(AndroidAppVersion(AndroidGodotAppBridge.GetVersionName()));
         sb.AppendLine(ExternalFilesDir(AndroidGodotAppBridge.GetExternalFilesDirPath()));
         sb.AppendLine(UsableDataBytes(AndroidGodotAppBridge.GetUsableSpaceBytes(dataDir)));

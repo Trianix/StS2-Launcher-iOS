@@ -6,48 +6,18 @@ This roadmap documents the architectural strategy, phase breakdown, and executio
 
 ## Architecture Overview
 
-```
-+---------------------------------------------------------------------------------+
-|                                 Slay the Spire 2                                |
-|           (Godot 4.5.1 PCK + C# Managed sts2.dll + Workshop Mods)               |
-+---------------------------------------------------------------------------------+
-                                      |
-                                      v
-+---------------------------------------------------------------------------------+
-|                       STS2Mobile (Managed C# Layer)                             |
-|  - Harmony / MonoMod Runtime Detours (Mobile layout, touch, aspect ratio)       |
-|  - SteamKit2 (Steam login, branch depot downloader, Cloud save sync)            |
-|  - Standalone Godot C# Launcher UI                                              |
-|  - AppPaths (Sandboxed Documents & Application Support)                         |
-+---------------------------------------------------------------------------------+
-                                      |
-                                      v
-+---------------------------------------------------------------------------------+
-|                          Godot 4.5.1 Engine (iOS)                               |
-|  - SCons platform=ios arch=arm64 module_mono_enabled=yes                        |
-|  - Metal Rendering Driver (CAMetalLayer)                                        |
-|  - Patched modules/mono (hooks ModEntry.Apply on mobile)                        |
-|  - FMOD GDExtension (iOS arm64)                                                 |
-+---------------------------------------------------------------------------------+
-                                      |
-                                      v
-+---------------------------------------------------------------------------------+
-|                    Mono Runtime (.NET 9 ios-arm64)                              |
-|  - Pinned commit 3c298d9f00936d651cc47d221762474e25277672                       |
-|  - libmonosgen-2.0.a static library                                             |
-|  - JIT enabled via get-task-allow entitlement (AltStore / SideStore / TrollStore)|
-+---------------------------------------------------------------------------------+
-                                      |
-                                      v
-+---------------------------------------------------------------------------------+
-|                       Native iOS Host Shell (Xcode)                             |
-|  - AppDelegate.mm (AVAudioSession, lifecycle, staging trigger)                  |
-|  - ViewController.mm (Metal surface, landscape layout, home bar auto-hide)      |
-|  - IOSAssemblyBootstrapper.mm (Stages BCL & DLLs into Application Support)      |
-|  - IOSGodotAppBridge.mm (C-linkage P/Invoke exports for managed C#)             |
-|  - Info.plist (UIFileSharingEnabled, LSSupportsOpeningDocumentsInPlace)         |
-|  - STS2Launcher.entitlements (get-task-allow, dynamic-codesigning)              |
-+---------------------------------------------------------------------------------+
+```mermaid
+flowchart TD
+    Game["Slay the Spire 2<br/>(Godot 4.5.1 PCK + sts2.dll + Workshop Mods)"]
+    Managed["STS2Mobile (Managed C# Layer)<br/>- Harmony/MonoMod Detours<br/>- SteamKit2 Depot Downloader & Cloud Sync<br/>- Godot Launcher UI<br/>- AppPaths (Sandboxed Documents & App Support)"]
+    Engine["Godot 4.5.1 Engine (iOS)<br/>- SCons platform=ios arch=arm64 module_mono_enabled=yes<br/>- Metal Rendering Driver (CAMetalLayer)<br/>- Patched modules/mono<br/>- FMOD GDExtension"]
+    Mono["Mono Runtime (.NET 9 ios-arm64)<br/>- libmonosgen-2.0.a<br/>- JIT enabled via get-task-allow entitlement"]
+    Host["Native iOS Host Shell (Xcode)<br/>- AppDelegate.mm (AVAudioSession, lifecycle)<br/>- ViewController.mm (Metal surface, landscape layout)<br/>- IOSAssemblyBootstrapper.mm (Assembly staging)<br/>- IOSGodotAppBridge.mm (C-linkage P/Invoke exports)<br/>- Info.plist & STS2Launcher.entitlements"]
+
+    Game --> Managed
+    Managed --> Engine
+    Engine --> Mono
+    Engine --> Host
 ```
 
 ---
@@ -60,7 +30,7 @@ This roadmap documents the architectural strategy, phase breakdown, and executio
 - [x] Implement `AppDelegate.h`/`.mm` with `AVAudioSessionCategoryPlayback` (ambient mix enabled).
 - [x] Implement `ViewController.h`/`.mm` with `CAMetalLayer` and auto-hiding home indicator.
 - [x] Implement `IOSAssemblyBootstrapper.h`/`.mm` to stage BCL and assemblies into `~/Library/Application Support/.godot/mono/publish/arm64`.
-- [x] Implement `IOSGodotAppBridge.h`/`.mm` with C-linkage exports (`ios_share_text_file`, `ios_get_usable_space_bytes`, `ios_get_device_diagnostics`, `ios_set_keep_screen_on`, `ios_get_safe_area_insets`, `ios_get_documents_dir`).
+- [x] Implement `IOSGodotAppBridge.h`/`.mm` with C-linkage exports (`ios_share_text_file`, `ios_get_usable_space_bytes`, `ios_get_device_diagnostics`, `ios_get_version_name`, `ios_set_keep_screen_on`, `ios_get_safe_area_insets`, `ios_get_documents_dir`, `ios_restart_app`).
 - [x] Configure `Info.plist` with `UIFileSharingEnabled` (Files app integration), `LSSupportsOpeningDocumentsInPlace`, and `NSAllowsArbitraryLoads`.
 - [x] Configure `STS2Launcher.entitlements` with `get-task-allow = true` and `dynamic-codesigning = true` for JIT sideloading.
 - [x] Update `patches/godot/sts2-android-runtime.patch` to support both `ANDROID_ENABLED` and `IOS_ENABLED`.
@@ -96,25 +66,26 @@ This roadmap documents the architectural strategy, phase breakdown, and executio
 
 ---
 
-### Phase 5: Managed Layer Adaptations (`STS2Mobile` C#) `[NEXT]`
-- [ ] **`AppPaths.cs`**:
-  - Add `OperatingSystem.IsIOS()` detection.
-  - Map `ExternalModsDir` to `Environment.GetFolderPath(SpecialFolder.MyDocuments)/StS2Launcher/Mods`.
-  - Bypass Android storage permissions checks (`HasStoragePermission()` returns `true`).
-- [ ] **Bridge Integration**:
-  - Implement `IOSGodotAppBridge.cs` in managed C# using `[DllImport("__Internal")]` to bind to the native C functions.
-  - Provide unified bridge abstraction (`AppBridge`) that delegates to `AndroidGodotAppBridge` on Android and `IOSGodotAppBridge` on iOS.
-- [ ] **Safe Area & Display Insets**:
-  - Update `UiScalePatches.cs` and `MobileLayoutPatches.cs` to query `DisplayServer.GetDisplaySafeArea()`.
-  - Add margin padding for iPhone notch, Dynamic Island, and bottom home bar.
-- [ ] **Managed Build Manifests**:
-  - Stage `mono-runtime-build.json` and `harmony-runtime-build.json` for iOS so `STS2Mobile.csproj` builds without Android dependencies.
+### Phase 5: Managed Layer Adaptations (`STS2Mobile` C#) `[COMPLETED]`
+- [x] **`AppPaths.cs`**:
+  - Added `OperatingSystem.IsIOS()` detection.
+  - Mapped `ExternalModsDir` to `Documents/StS2Launcher/Mods` (user accessible via iOS Files app).
+  - Bypassed Android storage permission checks (`HasStoragePermission()` returns `true`).
+  - Routed private data directory to iOS Application Support via `IOSGodotAppBridge.GetUserDataDir()`.
+- [x] **Bridge Integration**:
+  - Implemented `IOSGodotAppBridge.cs` in managed C# using `[DllImport("__Internal")]` to bind to native C functions.
+  - Connected `LauncherSharedTextFile.cs` to `IOSGodotAppBridge.ShareTextFile`.
+  - Connected `LauncherDiagnostics.cs` to iOS device diagnostics and Documents directory.
+  - Connected `DepotDownloader.FileSystem.cs` to `IOSGodotAppBridge.GetUsableSpaceBytes`.
+  - Added download screen keep-awake toggle (`IOSGodotAppBridge.SetKeepScreenOn(true/false)`) in `DepotDownloader.cs`.
+  - Routed restart calls in `LauncherModel.Launch.cs`, `AppLifecyclePatches.cs`, and `LauncherStartupRecoveryControlPanel` to `IOSGodotAppBridge.RestartApp()`.
+- [x] **Managed Build Manifests**:
+  - Updated `STS2Mobile.csproj` to support both `ios/assets/dotnet_bcl` and `android/assets/dotnet_bcl` build manifests.
 
 ---
 
 ### Phase 6: Steam Download & PCK Patching Pipeline `[PENDING]`
 - [ ] Test `SteamKit2` depot download on iOS (TLS / WebSocket socket performance).
-- [ ] Ensure `ios_set_keep_screen_on(true)` is activated during depot downloads to avoid iOS background suspension.
 - [ ] Verify `DepotDownloader.PckPatch.cs` patches `SlayTheSpire2.pck` cleanly on iOS.
 - [ ] Test Steam Cloud save upload/download over mobile connection.
 

@@ -49,6 +49,14 @@ const char *ios_get_device_diagnostics(void) {
     return strdup([diagnostics UTF8String]);
 }
 
+const char *ios_get_version_name(void) {
+    NSString *version = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
+    if (!version) {
+        version = @"0.2.436";
+    }
+    return strdup([version UTF8String]);
+}
+
 void ios_set_keep_screen_on(bool keepOn) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIApplication sharedApplication].idleTimerDisabled = keepOn;
@@ -85,6 +93,14 @@ void ios_get_safe_area_insets(float *top, float *bottom, float *left, float *rig
     if (bottom) *bottom = 0.0f;
     if (left) *left = 0.0f;
     if (right) *right = 0.0f;
+}
+
+void ios_restart_app(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // On iOS, an app cannot restart itself directly; exiting allows iOS/SideStore/user to relaunch.
+        NSLog(@"[STS2Launcher iOS] Restart requested; terminating application.");
+        exit(0);
+    });
 }
 
 }

@@ -60,13 +60,13 @@ internal sealed partial class DepotDownloader
 
     private void EnsureEnoughFreeSpaceForFile(string directory, long fileSize, string fileName)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())
             return;
         long availableFreeSpace;
         try
         {
             Directory.CreateDirectory(directory);
-            availableFreeSpace = GetAndroidAvailableFreeSpace(directory);
+            availableFreeSpace = GetAvailableFreeSpace(directory);
         }
         catch (Exception ex)
         {
@@ -74,18 +74,29 @@ internal sealed partial class DepotDownloader
             return;
         }
 
-        var required = fileSize + AndroidMinimumFreeSpaceBytes;
+        var minReserve = OperatingSystem.IsIOS() ? 100L * 1024 * 1024 : AndroidMinimumFreeSpaceBytes;
+        var required = fileSize + minReserve;
         if (availableFreeSpace < required)
         {
             throw new IOException($"Not enough storage for {fileName}: need {FormatBytes(required)}, " + $"available {FormatBytes(availableFreeSpace)}");
         }
     }
 
-    private static long GetAndroidAvailableFreeSpace(string directory)
+    private static long GetAvailableFreeSpace(string directory)
     {
-        var usableBytes = AndroidGodotAppBridge.GetUsableSpaceBytes(directory);
-        if (usableBytes > 0)
-            return usableBytes;
+        if (OperatingSystem.IsIOS())
+        {
+            var usable = IOSGodotAppBridge.GetUsableSpaceBytes(directory);
+            if (usable > 0)
+                return usable;
+        }
+        else if (OperatingSystem.IsAndroid())
+        {
+            var usableBytes = AndroidGodotAppBridge.GetUsableSpaceBytes(directory);
+            if (usableBytes > 0)
+                return usableBytes;
+        }
+
         var root = Path.GetPathRoot(Path.GetFullPath(directory));
         if (string.IsNullOrWhiteSpace(root))
             return long.MaxValue;

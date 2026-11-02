@@ -8,10 +8,12 @@ extern "C" {
 bool ios_share_text_file(const char *path);
 int64_t ios_get_usable_space_bytes(const char *path);
 const char *ios_get_device_diagnostics(void);
+const char *ios_get_version_name(void);
 void ios_set_keep_screen_on(bool keepOn);
 const char *ios_get_documents_dir(void);
 const char *ios_get_user_data_dir(void);
 void ios_get_safe_area_insets(float *top, float *bottom, float *left, float *right);
+void ios_restart_app(void);
 
 #ifdef __cplusplus
 }

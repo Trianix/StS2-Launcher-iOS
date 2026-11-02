@@ -1,3 +1,4 @@
+using System;
 using STS2Mobile;
 
 namespace STS2Mobile.Launcher;
@@ -14,10 +15,17 @@ internal readonly struct LauncherSharedTextFile
     internal bool Shared { get; }
 
     internal static LauncherSharedTextFile Share(string path)
-        => new(path, AndroidGodotAppBridge.ShareTextFile(path));
+    {
+        if (OperatingSystem.IsIOS())
+        {
+            return new(path, IOSGodotAppBridge.ShareTextFile(path));
+        }
+
+        return new(path, AndroidGodotAppBridge.ShareTextFile(path));
+    }
 
     internal string AndroidShareSheetLogMessage()
         => Shared
-            ? "Android share sheet opened."
-            : "Could not open Android share sheet.";
+            ? "Share sheet opened."
+            : "Could not open share sheet.";
 }

@@ -69,7 +69,10 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
                     $"Startup recovery safe launch blocked: {problem ?? readiness.ReadinessProblem}"
                 );
                 _detail.Text = "Safe launch needs prepared game files. Returning to the launcher.";
-                AndroidGodotAppBridge.RestartApp();
+                if (OperatingSystem.IsIOS())
+                    IOSGodotAppBridge.RestartApp();
+                else
+                    AndroidGodotAppBridge.RestartApp();
                 return;
             }
 

@@ -65,7 +65,7 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
     private Button[] RecoveryButtons(float scale, Vector2 buttonMinimumSize, bool compactCopy)
         => new[]
         {
-            RecoveryButtonSpec.CreateButton(compactCopy ? "Restart App" : ReturnToLauncherButton, "Open launcher", AndroidGodotAppBridge.RestartApp, scale, buttonMinimumSize, compactCopy),
+            RecoveryButtonSpec.CreateButton(compactCopy ? "Restart App" : ReturnToLauncherButton, "Open launcher", RestartApp, scale, buttonMinimumSize, compactCopy),
             RecoveryButtonSpec.CreateButton(compactCopy ? "Safe Start" : RestartSafeLaunchButton, "Compatibility mode", RestartWithSafeLaunch, scale, buttonMinimumSize, compactCopy),
             RecoveryButtonSpec.CreateButton(compactCopy ? "Support Report" : ExportDiagnosticsButton, "", ExportDiagnostics, scale, buttonMinimumSize, compactCopy),
             RecoveryButtonSpec.CreateButton(compactCopy ? "Copy Log" : CopyRawErrorLogButton, "", CopyRawErrorLog, scale, buttonMinimumSize, compactCopy),
@@ -75,3 +75,11 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
     private void HideRecoveryControls()
         => Layer.QueueFree();
 }
+
+    private static void RestartApp()
+    {
+        if (OperatingSystem.IsIOS())
+            IOSGodotAppBridge.RestartApp();
+        else
+            AndroidGodotAppBridge.RestartApp();
+    }

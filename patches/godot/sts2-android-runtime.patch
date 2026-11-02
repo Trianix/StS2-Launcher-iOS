@@ -16,9 +16,18 @@ index aed7eff..fee7afa 100644
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
 diff --git a/modules/mono/mono_gd/gd_mono.cpp b/modules/mono/mono_gd/gd_mono.cpp
-index 14dd433..737ae00 100644
+index 14dd433..850fd5c 100644
 --- a/modules/mono/mono_gd/gd_mono.cpp
 +++ b/modules/mono/mono_gd/gd_mono.cpp
+@@ -55,7 +55,7 @@
+ #endif
+ 
+ #ifndef TOOLS_ENABLED
+-#ifdef ANDROID_ENABLED
++#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
+ #include "../thirdparty/mono_delegates.h"
+ #endif
+ #endif
 @@ -71,11 +71,23 @@ hostfxr_close_fn hostfxr_close = nullptr;
  #ifndef TOOLS_ENABLED
  typedef int(CORECLR_DELEGATE_CALLTYPE *coreclr_create_delegate_fn)(void *hostHandle, unsigned int domainId, const char *entryPointAssemblyName, const char *entryPointTypeName, const char *entryPointMethodName, void **delegate);
@@ -45,7 +54,73 @@ index 14dd433..737ae00 100644
  mono_install_assembly_preload_hook_fn mono_install_assembly_preload_hook = nullptr;
  mono_assembly_name_get_name_fn mono_assembly_name_get_name = nullptr;
  mono_assembly_name_get_culture_fn mono_assembly_name_get_culture = nullptr;
-@@ -331,7 +343,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+@@ -211,6 +223,8 @@ String find_monosgen() {
+ 	// Android includes all native libraries in the libs directory of the APK
+ 	// so we assume it exists and use only the name to dlopen it.
+ 	return "libmonosgen-2.0.so";
++#elif defined(IOS_ENABLED)
++	return "libmonosgen-2.0.dylib";
+ #else
+ #if defined(WINDOWS_ENABLED)
+ 	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
+@@ -297,6 +311,56 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+ 
+ #ifndef TOOLS_ENABLED
+ bool load_coreclr(void *&r_coreclr_dll_handle) {
++#if defined(IOS_ENABLED)
++	{
++	// On iOS, Mono is statically linked into the main executable.
++	void *lib = dlopen(nullptr, RTLD_NOW);
++	if (!lib) {
++		lib = RTLD_DEFAULT;
++	}
++	void *symbol = dlsym(lib, "coreclr_initialize");
++	if (symbol != nullptr) {
++		r_coreclr_dll_handle = lib;
++		coreclr_initialize = (coreclr_initialize_fn)symbol;
++
++		symbol = dlsym(lib, "coreclr_create_delegate");
++		ERR_FAIL_COND_V(symbol == nullptr, false);
++		coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
++
++		symbol = dlsym(lib, "mono_threads_enter_gc_safe_region_unbalanced");
++		if (symbol != nullptr) {
++			mono_enter_gc_safe_region = (mono_enter_gc_safe_region_fn)symbol;
++		}
++
++		symbol = dlsym(lib, "mono_install_assembly_preload_hook");
++		if (symbol != nullptr) {
++			mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
++		}
++
++		symbol = dlsym(lib, "mono_assembly_name_get_name");
++		if (symbol != nullptr) {
++			mono_assembly_name_get_name = (mono_assembly_name_get_name_fn)symbol;
++		}
++
++		symbol = dlsym(lib, "mono_assembly_name_get_culture");
++		if (symbol != nullptr) {
++			mono_assembly_name_get_culture = (mono_assembly_name_get_culture_fn)symbol;
++		}
++
++		symbol = dlsym(lib, "mono_image_open_from_data_with_name");
++		if (symbol != nullptr) {
++			mono_image_open_from_data_with_name = (mono_image_open_from_data_with_name_fn)symbol;
++		}
++
++		symbol = dlsym(lib, "mono_assembly_load_from_full");
++		if (symbol != nullptr) {
++			mono_assembly_load_from_full = (mono_assembly_load_from_full_fn)symbol;
++		}
++
++		return (coreclr_initialize && coreclr_create_delegate);
++	}
++	}
++#endif
+ 	String coreclr_path = find_coreclr();
+ 
+ 	bool is_monovm = false;
+@@ -331,7 +395,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
  	ERR_FAIL_COND_V(err != OK, false);
  	coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
  
@@ -58,7 +133,48 @@ index 14dd433..737ae00 100644
  	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
  	ERR_FAIL_COND_V(err != OK, false);
  	mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
-@@ -601,6 +617,72 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -518,7 +586,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
+ #endif
+ 
+ #ifndef TOOLS_ENABLED
+-#ifdef ANDROID_ENABLED
++#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
+ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
+ 	constexpr bool ref_only = false;
+ 
+@@ -538,6 +606,20 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
+ 	String path = GodotSharpDirs::get_api_assemblies_dir();
+ 	path = path.path_join(assembly_name);
+ 
++#if defined(IOS_ENABLED)
++	if (!FileAccess::exists(path)) {
++		String bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join("assemblies").path_join(assembly_name);
++		if (FileAccess::exists(bundle_path)) {
++			path = bundle_path;
++		} else {
++			bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join(assembly_name);
++			if (FileAccess::exists(bundle_path)) {
++				path = bundle_path;
++			}
++		}
++	}
++#endif
++
+ 	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
+ 
+ 	if (!FileAccess::exists(path)) {
+@@ -577,8 +659,8 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+ 
+ 	String assembly_name = Path::get_csharp_project_name();
+ 
+-#ifdef ANDROID_ENABLED
+-	// Android requires installing a preload hook to load assemblies from inside the APK,
++#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
++	// Android & iOS require installing a preload hook to load assemblies from user data / app bundle,
+ 	// other platforms can find the assemblies with the default lookup.
+ 	if (mono_install_assembly_preload_hook != nullptr) {
+ 		mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
+@@ -601,6 +683,74 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  			(void **)&godot_plugins_initialize);
  	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
  
@@ -68,7 +184,9 @@ index 14dd433..737ae00 100644
 +	// loader worker waits for this thread to suspend for GC. Managed callbacks
 +	// already enter/restore their own GC state; leave the host in native mode.
 +	void *native_stack_marker = nullptr;
-+	mono_enter_gc_safe_region(&native_stack_marker);
++	if (mono_enter_gc_safe_region != nullptr) {
++		mono_enter_gc_safe_region(&native_stack_marker);
++	}
 +	print_verbose(".NET: Mobile Mono host entered GC-safe native execution");
 +
 +	int sts2mobile_init_rc = coreclr_create_delegate(coreclr_handle, domain_id,
@@ -131,7 +249,7 @@ index 14dd433..737ae00 100644
  	return godot_plugins_initialize;
  }
  #endif
-@@ -705,8 +787,35 @@ void GDMono::initialize() {
+@@ -705,8 +855,35 @@ void GDMono::initialize() {
  
  	print_verbose(".NET: GodotPlugins initialized");
  

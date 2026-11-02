@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		10000001 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 20000001 /* main.m */; };
 		10000002 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000002 /* AppDelegate.mm */; };
 		10000003 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000003 /* ViewController.mm */; };
 		10000004 /* IOSAssemblyBootstrapper.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000004 /* IOSAssemblyBootstrapper.mm */; };
@@ -17,7 +16,6 @@
 
 /* Begin PBXFileReference section */
 		00000001 /* STS2Launcher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = STS2Launcher.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		20000001 /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		20000002 /* AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
 		20000007 /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		20000003 /* ViewController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
@@ -61,7 +59,6 @@
 				20000004 /* IOSAssemblyBootstrapper.mm */,
 				20000010 /* IOSGodotAppBridge.h */,
 				20000005 /* IOSGodotAppBridge.mm */,
-				20000001 /* main.m */,
 				20000006 /* LaunchScreen.storyboard */,
 				20000011 /* Info.plist */,
 				20000012 /* STS2Launcher.entitlements */,
@@ -147,7 +144,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				10000001 /* main.m in Sources */,
 				10000002 /* AppDelegate.mm in Sources */,
 				10000003 /* ViewController.mm in Sources */,
 				10000004 /* IOSAssemblyBootstrapper.mm in Sources */,
@@ -229,17 +225,46 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/libs\"",
+				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
+					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
+					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
 					"-framework",
 					"Metal",
 					"-framework",
+					"MetalFX",
+					"-framework",
 					"QuartzCore",
+					"-framework",
+					"UIKit",
+					"-framework",
+					"Foundation",
 					"-framework",
 					"AVFoundation",
 					"-framework",
+					"AVFAudio",
+					"-framework",
+					"AudioToolbox",
+					"-framework",
+					"CoreAudio",
+					"-framework",
+					"CoreMIDI",
+					"-framework",
+					"CoreMotion",
+					"-framework",
+					"CoreHaptics",
+					"-framework",
+					"GameController",
+					"-framework",
 					"Security",
+					"-lc++",
+					"-lz",
+					"-liconv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.trianix.sts2launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -258,17 +283,46 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/libs\"",
+				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
+					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
+					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
 					"-framework",
 					"Metal",
 					"-framework",
+					"MetalFX",
+					"-framework",
 					"QuartzCore",
+					"-framework",
+					"UIKit",
+					"-framework",
+					"Foundation",
 					"-framework",
 					"AVFoundation",
 					"-framework",
+					"AVFAudio",
+					"-framework",
+					"AudioToolbox",
+					"-framework",
+					"CoreAudio",
+					"-framework",
+					"CoreMIDI",
+					"-framework",
+					"CoreMotion",
+					"-framework",
+					"CoreHaptics",
+					"-framework",
+					"GameController",
+					"-framework",
 					"Security",
+					"-lc++",
+					"-lz",
+					"-liconv",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.trianix.sts2launcher;
 				PRODUCT_NAME = "$(TARGET_NAME)";

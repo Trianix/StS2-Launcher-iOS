@@ -1,12 +1,23 @@
 #import "AppDelegate.h"
-#import "ViewController.h"
 #import "IOSAssemblyBootstrapper.h"
 #import <AVFoundation/AVFoundation.h>
 
 @implementation AppDelegate
 
+static AppDelegate *sSharedDelegate = nil;
+
 + (AppDelegate *)sharedDelegate {
-    return (AppDelegate *)[UIApplication sharedApplication].delegate;
+    return sSharedDelegate;
+}
+
++ (void)load {
+    sSharedDelegate = [[AppDelegate alloc] init];
+    // Register as a Godot application delegate service so we receive lifecycle callbacks
+    Class gdtClass = NSClassFromString(@"GDTApplicationDelegate");
+    if (gdtClass && [gdtClass respondsToSelector:@selector(addService:)]) {
+        [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
+        NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
+    }
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
@@ -22,18 +33,6 @@
         NSLog(@"[STS2Launcher iOS] Warning: Failed to set audio session category: %@", audioError);
     }
     [audioSession setActive:YES error:nil];
-    
-    // Stage .NET BCL and bootstrap assemblies into application support directory
-    NSError *stageError = nil;
-    if (![IOSAssemblyBootstrapper stageAssembliesWithError:&stageError]) {
-        NSLog(@"[STS2Launcher iOS] Warning: Assembly staging encountered issues: %@", stageError);
-    }
-    
-    // Set up window and main view controller
-    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    self.viewController = [[ViewController alloc] init];
-    self.window.rootViewController = self.viewController;
-    [self.window makeKeyAndVisible];
     
     return YES;
 }

@@ -51,5 +51,10 @@
 	</dict>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+	<key>godot_cmdline</key>
+	<array>
+		<string>--main-pack</string>
+		<string>bootstrap.pck</string>
+	</array>
 </dict>
 </plist>

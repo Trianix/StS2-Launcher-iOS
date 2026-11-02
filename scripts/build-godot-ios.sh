@@ -31,10 +31,13 @@ scons platform=ios arch=arm64 target="$TARGET" module_mono_enabled=yes -j"$jobs"
 
 BUILT_LIB="$GODOT_DIR/bin/libgodot.ios.$TARGET.arm64.a"
 if [ ! -f "$BUILT_LIB" ]; then
-    echo "ERROR: Expected output not found at $BUILT_LIB"
+    BUILT_LIB="$(find "$GODOT_DIR/bin" -name "libgodot.ios*.a" | head -n 1)"
+fi
+if [ -z "$BUILT_LIB" ] || [ ! -f "$BUILT_LIB" ]; then
+    echo "ERROR: Expected Godot library not found in $GODOT_DIR/bin"
     exit 1
 fi
 
 mkdir -p "$IOS_LIBS"
-cp "$BUILT_LIB" "$IOS_LIBS/libgodot.ios.$TARGET.arm64.a"
-echo "Staged Godot iOS library at $IOS_LIBS/libgodot.ios.$TARGET.arm64.a"
+cp "$BUILT_LIB" "$IOS_LIBS/libgodot.ios.template_release.arm64.a"
+echo "Staged Godot iOS library at $IOS_LIBS/libgodot.ios.template_release.arm64.a"

@@ -3,6 +3,14 @@
 
 @implementation IOSAssemblyBootstrapper
 
++ (void)load {
+    NSLog(@"[STS2Launcher iOS] Triggering early assembly staging in +load...");
+    NSError *error = nil;
+    if (![self stageAssembliesWithError:&error]) {
+        NSLog(@"[STS2Launcher iOS] Warning: Early assembly staging encountered issues: %@", error);
+    }
+}
+
 + (NSString *)userDataDirectory {
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
     NSString *base = paths.firstObject;

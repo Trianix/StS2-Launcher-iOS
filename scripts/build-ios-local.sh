@@ -19,17 +19,18 @@ dotnet build "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release
 # 2. Generate Bootstrap PCK
 echo "Generating bootstrap.pck..."
 python3 "$ROOT/scripts/make-bootstrap-pck.py" "$IOS_DIR/STS2Launcher/bootstrap.pck"
+cp -f "$IOS_DIR/STS2Launcher/bootstrap.pck" "$IOS_DIR/STS2Launcher/STS2Launcher.pck"
 
 # 3. Stage Managed Assemblies into App Bundle Resources
 ASSEMBLIES_DIR="$IOS_DIR/STS2Launcher/assemblies"
 mkdir -p "$ASSEMBLIES_DIR"
 
 MANAGED_BIN="$ROOT/src/STS2Mobile/bin/Release/net9.0"
-cp "$MANAGED_BIN/STS2Mobile.dll" "$ASSEMBLIES_DIR/"
-if [ -f "$MANAGED_BIN/SteamKit2.dll" ]; then cp "$MANAGED_BIN/SteamKit2.dll" "$ASSEMBLIES_DIR/"; fi
-if [ -f "$MANAGED_BIN/0Harmony.dll" ]; then cp "$MANAGED_BIN/0Harmony.dll" "$ASSEMBLIES_DIR/"; fi
-if [ -f "$MANAGED_BIN/MonoMod.Core.dll" ]; then cp "$MANAGED_BIN/MonoMod."*.dll "$ASSEMBLIES_DIR/"; fi
-if [ -f "$MANAGED_BIN/Mono.Cecil.dll" ]; then cp "$MANAGED_BIN/Mono.Cecil.dll" "$ASSEMBLIES_DIR/"; fi
+cp -f "$MANAGED_BIN/STS2Mobile.dll" "$ASSEMBLIES_DIR/"
+if [ -f "$MANAGED_BIN/SteamKit2.dll" ]; then cp -f "$MANAGED_BIN/SteamKit2.dll" "$ASSEMBLIES_DIR/"; fi
+if [ -f "$MANAGED_BIN/0Harmony.dll" ]; then cp -f "$MANAGED_BIN/0Harmony.dll" "$ASSEMBLIES_DIR/"; fi
+if [ -f "$MANAGED_BIN/MonoMod.Core.dll" ]; then cp -f "$MANAGED_BIN/MonoMod."*.dll "$ASSEMBLIES_DIR/"; fi
+if [ -f "$MANAGED_BIN/Mono.Cecil.dll" ]; then cp -f "$MANAGED_BIN/Mono.Cecil.dll" "$ASSEMBLIES_DIR/"; fi
 
 # Also stage from android assets if dotnet_bcl is staged there
 if [ -d "$ROOT/android/assets/dotnet_bcl" ]; then
@@ -56,6 +57,17 @@ xcodebuild archive \
 # 5. Package unsigned / ad-hoc IPA for AltStore / SideStore / Sideloadly
 echo "Packaging IPA..."
 APP_DIR="$ARCHIVE_PATH/Products/Applications/STS2Launcher.app"
+
+# Ensure all runtime assets are embedded into the .app bundle
+cp -f "$IOS_DIR/STS2Launcher/bootstrap.pck" "$APP_DIR/"
+cp -f "$IOS_DIR/STS2Launcher/bootstrap.pck" "$APP_DIR/STS2Launcher.pck"
+mkdir -p "$APP_DIR/assemblies"
+cp -R "$ASSEMBLIES_DIR/"* "$APP_DIR/assemblies/"
+if [ -d "$IOS_DIR/STS2Launcher/dotnet_bcl" ]; then
+    mkdir -p "$APP_DIR/dotnet_bcl"
+    cp -R "$IOS_DIR/STS2Launcher/dotnet_bcl/"* "$APP_DIR/dotnet_bcl/"
+fi
+
 TMP_PAYLOAD="$(mktemp -d)"
 mkdir -p "$TMP_PAYLOAD/Payload"
 cp -R "$APP_DIR" "$TMP_PAYLOAD/Payload/"

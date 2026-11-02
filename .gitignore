@@ -10,6 +10,7 @@ android/local.properties
 android/res/values-*/godot_project_name_string.xml
 android/res/values/godot_project_name_string.xml
 ios/build/
+ios/libs/
 ios/DerivedData/
 ios/assets/dotnet_bcl/
 ios/**/xcuserdata/

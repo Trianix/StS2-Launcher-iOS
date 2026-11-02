@@ -96,6 +96,11 @@ cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
 mkdir -p "$ARTIFACTS_DIR"
 IPA_PATH="$ARTIFACTS_DIR/STS2Launcher-$VERSION_NAME.ipa"
 
+if [ -f "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" ]; then
+    ar -d "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" pcre2_chkdint_16.ios.template_release.arm64.o 2>/dev/null || true
+    ranlib "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" 2>/dev/null || true
+fi
+
 echo "Running xcodebuild..."
 xcodebuild build \
     -project "$XCODEPROJ" \

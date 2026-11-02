@@ -33,7 +33,7 @@ internal static class AppPaths
                     return Path.Combine(docs, "StS2Launcher", "Mods");
 
                 return Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments),
                     "StS2Launcher",
                     "Mods"
                 );

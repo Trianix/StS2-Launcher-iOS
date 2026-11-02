@@ -35,8 +35,9 @@ internal sealed class LauncherModsPresentation
 internal static class LauncherModsPresentationState
 {
     internal const string PendingSaveNamespaceLabel = "Saves determined at launch";
-    internal static LauncherModsPresentation ReadCurrent(string manualModsRoot = AppPaths.ExternalModsDir)
+    internal static LauncherModsPresentation ReadCurrent(string manualModsRoot = null)
     {
+        manualModsRoot ??= AppPaths.ExternalModsDir;
         var selection = LauncherModSelectionState.Load(AppPaths.AppPrivateModSelectionPath, persistMigration: false);
         var known = LauncherModSelectionState.KnownMods(selection, manualModsRoot);
         var dataDir = AppPaths.AppPrivateDataDir;

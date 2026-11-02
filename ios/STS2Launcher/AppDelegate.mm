@@ -2,6 +2,10 @@
 #import "IOSAssemblyBootstrapper.h"
 #import <AVFoundation/AVFoundation.h>
 
+// Required by Godot 4.5.1 iOS static library (register_ios_api / unregister_ios_api)
+void godot_apple_embedded_plugins_initialize() {}
+void godot_apple_embedded_plugins_deinitialize() {}
+
 @implementation AppDelegate
 
 static AppDelegate *sSharedDelegate = nil;

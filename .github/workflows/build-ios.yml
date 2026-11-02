@@ -1,0 +1,71 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version Name (e.g. 0.2.436)'
+        required: true
+        default: '0.2.436'
+      version_code:
+        description: 'Version Code (e.g. 436009)'
+        required: true
+        default: '436009'
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install SCons & Ninja
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install scons ninja
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+
+      - name: Setup Godot Source
+        run: |
+          ./scripts/setup-godot-source.sh
+
+      - name: Build Mono Runtime for iOS (ios-arm64)
+        run: |
+          ./scripts/build-ios-mono.sh
+
+      - name: Build Godot Engine for iOS
+        run: |
+          ./scripts/build-godot-ios.sh
+
+      - name: Build STS2Launcher iOS & Package IPA
+        run: |
+          VERSION_NAME="${{ github.event.inputs.version_name || '0.2.436' }}"
+          VERSION_CODE="${{ github.event.inputs.version_code || '436009' }}"
+          ./scripts/build-ios-local.sh "$VERSION_NAME" "$VERSION_CODE"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: STS2Launcher-iOS
+          path: |
+            artifacts/ios/*.ipa
+            artifacts/ios/*.sha256
+          if-no-files-found: error

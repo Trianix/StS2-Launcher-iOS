@@ -9,6 +9,11 @@ android/assets/dotnet_bcl/
 android/local.properties
 android/res/values-*/godot_project_name_string.xml
 android/res/values/godot_project_name_string.xml
+ios/build/
+ios/DerivedData/
+ios/assets/dotnet_bcl/
+ios/**/xcuserdata/
+ios/**/*.xcworkspace/xcuserdata/
 src/patcher/bin/
 src/patcher/obj/
 src/STS2Mobile/bin/
@@ -23,7 +28,11 @@ tmp-*/
 # Large binary files
 *.tar.gz
 *.apk
+*.ipa
+*.xcarchive
 *.so
+*.dylib
+*.a
 *.pck
 *.aar
 *.aar.bak*
@@ -36,6 +45,7 @@ vendor/
 
 # FMOD logos (proprietary)
 android/assets/FMOD_LOGOS/
+ios/assets/FMOD_LOGOS/
 
 # Upstream game files
 upstream/

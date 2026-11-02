@@ -6,6 +6,7 @@ This bootstrap PCK lets the engine initialize normally (project settings,
 """
 
 import os
+import sys
 import hashlib
 import struct
 from dataclasses import dataclass
@@ -176,7 +177,10 @@ def write_pck(output, header, file_base, file_payload, dir_base, dir_section):
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    output = os.path.join(script_dir, "..", "android", "assets", "bootstrap.pck")
+    if len(sys.argv) > 1:
+        output = sys.argv[1]
+    else:
+        output = os.path.join(script_dir, "..", "android", "assets", "bootstrap.pck")
 
     files = make_bootstrap_files()
 

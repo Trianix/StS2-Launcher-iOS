@@ -91,8 +91,8 @@ flowchart TD
 
 ---
 
-### Phase 7: Sideloading Packaging & Device Acceptance `[PENDING]`
-- [ ] Generate `.ipa` package using `scripts/build-ios-local.sh` or GitHub Actions.
+### Phase 7: Sideloading Packaging & Device Acceptance `[IN PROGRESS]`
+- [x] Generate `.ipa` package using `scripts/build-ios-local.sh` or GitHub Actions.
 - [ ] Sideload onto iPhone via AltStore (enable AltJIT) or SideStore (enable SideJIT).
 - [ ] Verify standalone launcher startup on physical device.
 - [ ] Verify Steam login, depot download, and PCK patch execution.

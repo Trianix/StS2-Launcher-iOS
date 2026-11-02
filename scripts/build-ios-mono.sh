@@ -35,6 +35,7 @@ echo "Configuring Mono CMake for iOS arm64..."
 mkdir -p "$BUILD_DIR"
 cmake -S "$SOURCE_DIR/src/mono" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_SYSTEM_NAME=iOS \
+    -DCMAKE_OSX_SYSROOT=iphoneos \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
     -DCLR_CMAKE_HOST_ARCH=arm64 \
     -DMONO_COMPONENTS_RID=ios-arm64 \
@@ -48,7 +49,6 @@ cmake --build "$BUILD_DIR" --target monosgen-static --parallel "$(sysctl -n hw.n
 
 OUTPUT_LIB="$BUILD_DIR/mono/mini/libmonosgen-2.0.a"
 if [ ! -f "$OUTPUT_LIB" ]; then
-    # In some cmake configs it may be in root lib directory
     OUTPUT_LIB="$(find "$BUILD_DIR" -name "libmonosgen*.a" | head -n 1)"
 fi
 

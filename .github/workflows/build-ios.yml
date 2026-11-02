@@ -2,7 +2,7 @@ name: Build iOS IPA
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/ios-port ]
     tags: [ 'v*' ]
   workflow_dispatch:
     inputs:

@@ -61,6 +61,72 @@ cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/lib/net9.0/"*.dll "$IOS_BUNDLE_BC
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/System.Private.CoreLib.dll" "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/libSystem."*.dylib "$IOS_FRAMEWORKS_DIR/"
 
+# 0b. Stage FMOD Studio Engine & fmod-gdextension (6.1.0-4.5.0) + spine-godot (4.2 / 4.5.1-stable) for iOS
+mkdir -p "$IOS_DIR/libs"
+
+FMOD_ADDONS_ZIP="$DEPS_CACHE_DIR/fmod-gdextension-6.1.0-4.5.0-addons.zip"
+if [ ! -f "$FMOD_ADDONS_ZIP" ]; then
+    echo "Downloading utopia-rise/fmod-gdextension 6.1.0-4.5.0 for iOS..."
+    curl -fSL "https://github.com/utopia-rise/fmod-gdextension/releases/download/6.1.0-4.5.0/addons.zip" -o "$FMOD_ADDONS_ZIP"
+fi
+
+FMOD_EXTRACT_DIR="$DEPS_CACHE_DIR/fmod-addons"
+if [ ! -d "$FMOD_EXTRACT_DIR/fmod/libs/iOS" ]; then
+    mkdir -p "$FMOD_EXTRACT_DIR"
+    unzip -q -o "$FMOD_ADDONS_ZIP" "fmod/libs/iOS/*" -d "$FMOD_EXTRACT_DIR"
+fi
+
+cp -f "$FMOD_EXTRACT_DIR/fmod/libs/iOS/libfmod_iphoneos.a" "$IOS_DIR/libs/"
+cp -f "$FMOD_EXTRACT_DIR/fmod/libs/iOS/libfmodstudio_iphoneos.a" "$IOS_DIR/libs/"
+
+FMOD_FW_NAME="libGodotFmod.ios.template_release.universal"
+FMOD_FW_DIR="$IOS_FRAMEWORKS_DIR/$FMOD_FW_NAME.framework"
+mkdir -p "$FMOD_FW_DIR"
+cp -f "$FMOD_EXTRACT_DIR/fmod/libs/iOS/libGodotFmod.ios.template_release.xcframework/ios-arm64/$FMOD_FW_NAME.dylib" "$FMOD_FW_DIR/$FMOD_FW_NAME"
+install_name_tool -id "@rpath/$FMOD_FW_NAME.framework/$FMOD_FW_NAME" "$FMOD_FW_DIR/$FMOD_FW_NAME"
+
+cat > "$FMOD_FW_DIR/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>$FMOD_FW_NAME</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.trianix.sts2launcher.framework.libGodotFmod</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$FMOD_FW_NAME</string>
+	<key>CFBundlePackageType</key>
+	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>6.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>6.1.0</string>
+	<key>DTPlatformName</key>
+	<string>iphoneos</string>
+	<key>MinimumOSVersion</key>
+	<string>15.0</string>
+</dict>
+</plist>
+EOF
+
+SPINE_ZIP="$DEPS_CACHE_DIR/spine-godot-extension-4.2-4.5.1-stable.zip"
+if [ ! -f "$SPINE_ZIP" ]; then
+    echo "Downloading spine-godot GDExtension 4.2 for Godot 4.5.1-stable..."
+    curl -fSL "https://spine-godot.s3.amazonaws.com/4.2/4.5.1-stable/spine-godot-extension-4.2-4.5.1-stable.zip" -o "$SPINE_ZIP"
+fi
+
+SPINE_EXTRACT_DIR="$DEPS_CACHE_DIR/spine-godot"
+if [ ! -d "$SPINE_EXTRACT_DIR/bin/ios" ]; then
+    mkdir -p "$SPINE_EXTRACT_DIR"
+    unzip -q -o "$SPINE_ZIP" "bin/ios/*" -d "$SPINE_EXTRACT_DIR"
+fi
+
+rm -rf "$IOS_FRAMEWORKS_DIR/libspine_godot.ios.template_release.framework"
+cp -R "$SPINE_EXTRACT_DIR/bin/ios/libspine_godot.ios.template_release.framework" "$IOS_FRAMEWORKS_DIR/"
+
 # 1. Build Managed Assembly
 echo "Publishing STS2Mobile managed assembly..."
 dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release
@@ -132,8 +198,19 @@ cp -R "$IOS_BUNDLE_BCL_DIR/"* "$APP_DIR/dotnet_bcl/"
 mkdir -p "$APP_DIR/Frameworks"
 cp -f "$IOS_FRAMEWORKS_DIR/"*.dylib "$APP_DIR/Frameworks/"
 cp -f "$IOS_FRAMEWORKS_DIR/"*.dylib "$APP_DIR/"
+for fw in "$IOS_FRAMEWORKS_DIR/"*.framework; do
+    if [ -d "$fw" ]; then
+        rm -rf "$APP_DIR/Frameworks/$(basename "$fw")"
+        cp -R "$fw" "$APP_DIR/Frameworks/"
+    fi
+done
 
-# Ad-hoc sign dylibs and app bundle with JIT entitlements
+# Ad-hoc sign frameworks, dylibs, and app bundle with JIT entitlements
+for fw in "$APP_DIR/Frameworks/"*.framework; do
+    if [ -d "$fw" ]; then
+        codesign --force --sign - "$fw"
+    fi
+done
 for dylib in "$APP_DIR/Frameworks/"*.dylib "$APP_DIR/"*.dylib; do
     if [ -f "$dylib" ]; then
         codesign --force --sign - "$dylib"

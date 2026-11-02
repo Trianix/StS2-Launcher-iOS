@@ -221,9 +221,14 @@
 				CODE_SIGN_IDENTITY = "-";
 				DEFINES_MODULE = YES;
 				INFOPLIST_FILE = STS2Launcher/Info.plist;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/STS2Launcher/Frameworks\"",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@executable_path",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -234,6 +239,14 @@
 					"-ObjC",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
+					"-framework",
+					"libGodotFmod.ios.template_release.universal",
+					"-framework",
+					"libspine_godot.ios.template_release",
+					"-lfmod_iphoneos",
+					"-lfmodstudio_iphoneos",
+					"-Wl,-U,_fmod_library_init",
+					"-Wl,-U,_spine_godot_library_init",
 					"-framework",
 					"Metal",
 					"-framework",
@@ -281,9 +294,14 @@
 				CODE_SIGN_IDENTITY = "-";
 				DEFINES_MODULE = YES;
 				INFOPLIST_FILE = STS2Launcher/Info.plist;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"$(PROJECT_DIR)/STS2Launcher/Frameworks\"",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@executable_path",
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
@@ -294,6 +312,14 @@
 					"-ObjC",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
+					"-framework",
+					"libGodotFmod.ios.template_release.universal",
+					"-framework",
+					"libspine_godot.ios.template_release",
+					"-lfmod_iphoneos",
+					"-lfmodstudio_iphoneos",
+					"-Wl,-U,_fmod_library_init",
+					"-Wl,-U,_spine_godot_library_init",
 					"-framework",
 					"Metal",
 					"-framework",

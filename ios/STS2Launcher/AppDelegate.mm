@@ -1,10 +1,43 @@
 #import "AppDelegate.h"
 #import "IOSAssemblyBootstrapper.h"
 #import <AVFoundation/AVFoundation.h>
+#include <stdint.h>
 
 // Required by Godot 4.5.1 iOS static library (register_ios_api / unregister_ios_api)
 void godot_apple_embedded_plugins_initialize() {}
 void godot_apple_embedded_plugins_deinitialize() {}
+
+// Declared in Godot 4.5.1 drivers/apple_embedded/os_apple_embedded.mm
+extern void register_dynamic_symbol(char *name, void *address);
+extern void add_apple_embedded_platform_init_callback(void (*cb)());
+
+extern "C" void fmod_library_init();
+extern "C" void spine_godot_library_init();
+
+static void sts2_register_gdextension_symbols() {
+    if (&fmod_library_init) {
+        register_dynamic_symbol((char *)"fmod_library_init", (void *)fmod_library_init);
+    }
+    if (&spine_godot_library_init) {
+        register_dynamic_symbol((char *)"spine_godot_library_init", (void *)spine_godot_library_init);
+    }
+}
+
+struct STS2GDExtensionSymbolRegistrar {
+    STS2GDExtensionSymbolRegistrar() {
+        add_apple_embedded_platform_init_callback(sts2_register_gdextension_symbols);
+    }
+};
+static STS2GDExtensionSymbolRegistrar sSTS2GDExtensionSymbolRegistrar;
+
+// Required by utopia-rise/fmod-gdextension on iOS (FmodServer::load_all_plugins)
+extern "C" __attribute__((visibility("default"))) __attribute__((used))
+uint32_t* load_all_fmod_plugins(void* p_interface, uint32_t* r_count) {
+    if (r_count) {
+        *r_count = 0;
+    }
+    return nullptr;
+}
 
 @implementation AppDelegate
 
@@ -37,8 +70,23 @@ static AppDelegate *sSharedDelegate = nil;
         NSLog(@"[STS2Launcher iOS] Warning: Failed to set audio session category: %@", audioError);
     }
     [audioSession setActive:YES error:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleAudioSessionInterruption:)
+                                                 name:AVAudioSessionInterruptionNotification
+                                               object:audioSession];
     
     return YES;
+}
+
+- (void)handleAudioSessionInterruption:(NSNotification *)notification {
+    NSNumber *interruptionType = notification.userInfo[AVAudioSessionInterruptionTypeKey];
+    if (!interruptionType) {
+        return;
+    }
+    if (interruptionType.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded) {
+        [[AVAudioSession sharedInstance] setActive:YES error:nil];
+    }
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application {
@@ -55,6 +103,7 @@ static AppDelegate *sSharedDelegate = nil;
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
     NSLog(@"[STS2Launcher iOS] applicationDidBecomeActive");
+    [[AVAudioSession sharedInstance] setActive:YES error:nil];
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {

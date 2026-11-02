@@ -58,11 +58,11 @@ flowchart TD
 
 ---
 
-### Phase 4: Audio Middleware (FMOD for iOS) `[PENDING]`
-- [ ] Obtain FMOD Studio Engine for iOS (`fmod.xcframework`).
-- [ ] Link FMOD frameworks into `ios/libs/` and Xcode project.
-- [ ] Build/stage `fmod_gdextension` for iOS (`fmod_gdextension.ios.template_release.arm64.dylib` or static link).
-- [ ] Confirm PCK patcher rewrites FMOD bank paths to `user://fmod_banks/` (functional within iOS sandbox).
+### Phase 4: Audio Middleware & Native GDExtensions (FMOD & Spine for iOS) `[COMPLETED]`
+- [x] Obtain FMOD Studio Engine for iOS (`libfmod_iphoneos.a`, `libfmodstudio_iphoneos.a`) and `utopia-rise/fmod-gdextension` `6.1.0-4.5.0` (`libGodotFmod.ios.template_release.xcframework`).
+- [x] Stage and link FMOD static libraries (`ios/libs/`) and `libGodotFmod.ios.template_release.universal.framework` + `libspine_godot.ios.template_release.framework` (`4.2` for Godot `4.5.1-stable`) into the Xcode project and `.app/Frameworks/` bundle.
+- [x] Register `fmod_library_init` and `spine_godot_library_init` with Godot's `OS_AppleEmbedded` dynamic symbol lookup table and export `load_all_fmod_plugins` + `AVAudioSessionInterruptionNotification` recovery in `AppDelegate.mm`.
+- [x] Confirm PCK patcher (`DepotDownloader.PckPatch.cs` and `LocalPckRepairOperation.cs`) configures `FmodManager`, `fmod.gdextension`, and `res://banks/desktop/*.bank` on arm64/iOS (`STS2Mobile.GameIdentityTests`: 220/220 passed).
 
 ---
 

@@ -1,8 +1,9 @@
 diff --git a/modules/mono/godotsharp_dirs.cpp b/modules/mono/godotsharp_dirs.cpp
-index aed7eff..b100eb3 100644
+index aed7eff..fee7afa 100644
 --- a/modules/mono/godotsharp_dirs.cpp
 +++ b/modules/mono/godotsharp_dirs.cpp
-@@ -170,8 +170,8 @@ private:
+@@ -169,9 +169,9 @@ private:
+ 		String arch = Engine::get_singleton()->get_architecture_name();
  		String appname_safe = Path::get_csharp_project_name();
  		String packed_path = "res://.godot/mono/publish/" + arch;
 -#ifdef ANDROID_ENABLED
@@ -15,7 +16,7 @@ index aed7eff..b100eb3 100644
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
 diff --git a/modules/mono/mono_gd/gd_mono.cpp b/modules/mono/mono_gd/gd_mono.cpp
-index 14dd433..01faddd 100644
+index 14dd433..737ae00 100644
 --- a/modules/mono/mono_gd/gd_mono.cpp
 +++ b/modules/mono/mono_gd/gd_mono.cpp
 @@ -71,11 +71,23 @@ hostfxr_close_fn hostfxr_close = nullptr;
@@ -30,20 +31,22 @@ index 14dd433..01faddd 100644
  
  coreclr_create_delegate_fn coreclr_create_delegate = nullptr;
  coreclr_initialize_fn coreclr_initialize = nullptr;
+-
+-#ifdef ANDROID_ENABLED
 +sts2mobile_initialize_fn sts2mobile_initialize = nullptr;
 +sts2mobile_probe_fn sts2mobile_probe = nullptr;
 +sts2mobile_harmony_probe_fn sts2mobile_harmony_probe = nullptr;
 +sts2mobile_apply_fn sts2mobile_apply = nullptr;
 +sts2mobile_show_launcher_fn sts2mobile_show_launcher = nullptr;
- 
--#ifdef ANDROID_ENABLED
++
 +#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
 +typedef void *(*mono_enter_gc_safe_region_fn)(void **);
 +mono_enter_gc_safe_region_fn mono_enter_gc_safe_region = nullptr;
  mono_install_assembly_preload_hook_fn mono_install_assembly_preload_hook = nullptr;
  mono_assembly_name_get_name_fn mono_assembly_name_get_name = nullptr;
  mono_assembly_name_get_culture_fn mono_assembly_name_get_culture = nullptr;
-@@ -332,6 +344,10 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+@@ -331,7 +343,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+ 	ERR_FAIL_COND_V(err != OK, false);
  	coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
  
 -#ifdef ANDROID_ENABLED
@@ -132,37 +135,35 @@ index 14dd433..01faddd 100644
  
  	print_verbose(".NET: GodotPlugins initialized");
  
--#if defined(ANDROID_ENABLED) && !defined(TOOLS_ENABLED)
 +#if (defined(ANDROID_ENABLED) || defined(IOS_ENABLED)) && !defined(TOOLS_ENABLED)
- 	bool android_x86_64_runtime = OS::get_singleton()->has_feature("x86_64");
- 	if (android_x86_64_runtime) {
- 		print_verbose(".NET: Skipping STS2Mobile Harmony bootstrap on x86_64; Harmony constructor crashes this Android Mono runtime.");
- 	} else {
- 		if (sts2mobile_harmony_probe != nullptr) {
- 			print_verbose(".NET: Running STS2Mobile Harmony constructor probe");
- 			int sts2mobile_harmony_probe_result = sts2mobile_harmony_probe();
- 			print_verbose(".NET: STS2Mobile Harmony constructor probe returned " + itos(sts2mobile_harmony_probe_result));
- 		}
- 
- 		if (sts2mobile_apply != nullptr) {
- 			print_verbose(".NET: Applying STS2Mobile bootstrap patches");
- 			sts2mobile_apply();
- 			print_verbose(".NET: STS2Mobile bootstrap patches returned");
- 		}
- 	}
- #endif
- 
++	bool android_x86_64_runtime = OS::get_singleton()->has_feature("x86_64");
++	if (android_x86_64_runtime) {
++		print_verbose(".NET: Skipping STS2Mobile Harmony bootstrap on x86_64; Harmony constructor crashes this Android Mono runtime.");
++	} else {
++		if (sts2mobile_harmony_probe != nullptr) {
++			print_verbose(".NET: Running STS2Mobile Harmony constructor probe");
++			int sts2mobile_harmony_probe_result = sts2mobile_harmony_probe();
++			print_verbose(".NET: STS2Mobile Harmony constructor probe returned " + itos(sts2mobile_harmony_probe_result));
++		}
++
++		if (sts2mobile_apply != nullptr) {
++			print_verbose(".NET: Applying STS2Mobile bootstrap patches");
++			sts2mobile_apply();
++			print_verbose(".NET: STS2Mobile bootstrap patches returned");
++		}
++	}
++#endif
++
  	_on_core_api_assembly_loaded();
  
--#if defined(ANDROID_ENABLED) && !defined(TOOLS_ENABLED)
 +#if (defined(ANDROID_ENABLED) || defined(IOS_ENABLED)) && !defined(TOOLS_ENABLED)
- 	if (android_x86_64_runtime && sts2mobile_show_launcher != nullptr) {
- 		print_verbose(".NET: Scheduling STS2Mobile launcher-only UI on x86_64");
- 		int sts2mobile_show_launcher_result = sts2mobile_show_launcher();
- 		print_verbose(".NET: STS2Mobile launcher-only UI returned " + itos(sts2mobile_show_launcher_result));
- 	}
- #endif
- 
++	if (android_x86_64_runtime && sts2mobile_show_launcher != nullptr) {
++		print_verbose(".NET: Scheduling STS2Mobile launcher-only UI on x86_64");
++		int sts2mobile_show_launcher_result = sts2mobile_show_launcher();
++		print_verbose(".NET: STS2Mobile launcher-only UI returned " + itos(sts2mobile_show_launcher_result));
++	}
++#endif
++
  #ifdef TOOLS_ENABLED
  	_try_load_project_assembly();
  #endif

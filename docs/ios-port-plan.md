@@ -93,7 +93,12 @@ flowchart TD
 
 ### Phase 7: Sideloading Packaging & Device Acceptance `[IN PROGRESS]`
 - [x] Generate `.ipa` package using `scripts/build-ios-local.sh` or GitHub Actions.
-- [ ] Sideload onto iPhone via AltStore (enable AltJIT) or SideStore (enable SideJIT).
+- [x] Sideload onto iPhone via SideStore / StikDebug (`com.trianix.sts2launcher.D692498JD2`).
+- [x] Implement runtime logging to `Documents/app_output.log` and double-stage BCL assemblies to `Documents/.godot/mono/publish/arm64`.
+- [x] Identify iOS 26 / A15 TXM W^X JIT execution barrier via diagnostic JIT probe.
+- [x] Configure Mono runtime in interpreter-only mode (`MONO_AOT_MODE_INTERP_ONLY`) to bypass JIT code page restrictions.
 - [ ] Verify standalone launcher startup on physical device.
 - [ ] Verify Steam login, depot download, and PCK patch execution.
 - [ ] Verify game boot, touch input, audio playback (FMOD), and Cloud save sync.
+
+See [iOS Runtime Findings](ios-runtime-findings.md) for full diagnostic records, crash analyses, and architectural decisions.

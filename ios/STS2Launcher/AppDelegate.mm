@@ -48,6 +48,17 @@ static AppDelegate *sSharedDelegate = nil;
 }
 
 + (void)load {
+    // Redirect stdout and stderr to Documents/app_output.log so all Godot/Mono/C# logs are accessible
+    NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    if (docPaths.count > 0) {
+        NSString *logPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output.log"];
+        freopen([logPath UTF8String], "a+", stdout);
+        freopen([logPath UTF8String], "a+", stderr);
+        setvbuf(stdout, NULL, _IONBF, 0);
+        setvbuf(stderr, NULL, _IONBF, 0);
+    }
+    NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
+
     sSharedDelegate = [[AppDelegate alloc] init];
     // Register as a Godot application delegate service so we receive lifecycle callbacks
     Class gdtClass = NSClassFromString(@"GDTApplicationDelegate");
@@ -59,6 +70,7 @@ static AppDelegate *sSharedDelegate = nil;
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     NSLog(@"[STS2Launcher iOS] Application didFinishLaunchingWithOptions");
+    setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 0);
     
     // Configure audio session for FMOD / game audio
     NSError *audioError = nil;

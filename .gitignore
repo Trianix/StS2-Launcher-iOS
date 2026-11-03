@@ -13,6 +13,7 @@ ios/build/
 ios/libs/
 ios/DerivedData/
 ios/assets/dotnet_bcl/
+*.mobiledevicepairing
 ios/**/xcuserdata/
 ios/**/*.xcworkspace/xcuserdata/
 src/patcher/bin/

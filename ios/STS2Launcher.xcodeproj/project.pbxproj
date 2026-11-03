@@ -237,6 +237,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
+					"-rdynamic",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
 					"-framework",
@@ -310,6 +311,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
+					"-rdynamic",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libgodot.ios.template_release.arm64.a",
 					"-Wl,-force_load,$(PROJECT_DIR)/libs/libmonosgen-2.0.a",
 					"-framework",

@@ -63,7 +63,7 @@ index 14dd433..850fd5c 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -297,6 +311,55 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -297,6 +311,56 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  
  #ifndef TOOLS_ENABLED
 +#if defined(IOS_ENABLED)

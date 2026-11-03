@@ -39,6 +39,79 @@ uint32_t* load_all_fmod_plugins(void* p_interface, uint32_t* r_count) {
     return nullptr;
 }
 
+// ---- JIT capability probe (diagnostic) ----
+// Reports to the log whether this process can execute freshly written code, using
+// the same strategies Mono might use. A fault is caught so the probe can't crash the app.
+#include <sys/mman.h>
+#include <setjmp.h>
+#include <signal.h>
+#include <pthread.h>
+#include <libkern/OSCacheControl.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#include <sys/proc.h>
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
+#include <dlfcn.h>
+#include <unistd.h>
+
+static sigjmp_buf sJitProbeJmp;
+static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
+
+// mov w0,#42 ; ret
+static const uint32_t kProbeCode[2] = { 0x52800540, 0xd65f03c0 };
+
+// mode 0: plain RWX mmap. mode 1: RW then mprotect(RX). mode 2: MAP_JIT + write-protect toggle.
+static void sts2_jit_probe_case(int mode, const char *name) {
+    struct sigaction sa, oldSegv, oldBus;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = sts2_jit_probe_handler;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, &oldSegv);
+    sigaction(SIGBUS, &sa, &oldBus);
+
+    int sig = sigsetjmp(sJitProbeJmp, 1);
+    if (sig != 0) {
+        printf("[JITProbe] %s: FAULT signal %d (errno=%d)\n", name, sig, errno);
+    } else {
+        typedef void (*jit_protect_fn)(int);
+        jit_protect_fn jitProtect = (jit_protect_fn)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np");
+        if (mode == 2 && !jitProtect) printf("[JITProbe] %s: pthread_jit_write_protect_np not found\n", name);
+        size_t len = 16384;
+        int prot = (mode == 0 || mode == 2) ? (PROT_READ | PROT_WRITE | PROT_EXEC) : (PROT_READ | PROT_WRITE);
+        int flags = MAP_PRIVATE | MAP_ANON | (mode == 2 ? MAP_JIT : 0);
+        void *p = mmap(NULL, len, prot, flags, -1, 0);
+        if (p == MAP_FAILED) {
+            printf("[JITProbe] %s: mmap FAILED errno=%d (%s)\n", name, errno, strerror(errno));
+        } else {
+            if (mode == 2 && jitProtect) jitProtect(0);
+            memcpy(p, kProbeCode, sizeof(kProbeCode));
+            if (mode == 2 && jitProtect) jitProtect(1);
+            sys_icache_invalidate(p, sizeof(kProbeCode));
+            if (mode == 1) {
+                int rc = mprotect(p, len, PROT_READ | PROT_EXEC);
+                if (rc != 0) printf("[JITProbe] %s: mprotect RX FAILED errno=%d (%s)\n", name, errno, strerror(errno));
+            }
+            int r = ((int (*)(void))p)();
+            printf("[JITProbe] %s: OK, executed generated code, returned %d\n", name, r);
+            munmap(p, len);
+        }
+    }
+    sigaction(SIGSEGV, &oldSegv, NULL);
+    sigaction(SIGBUS, &oldBus, NULL);
+}
+
+static void sts2_run_jit_probe() {
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid() };
+    struct kinfo_proc kp; size_t sz = sizeof(kp); memset(&kp, 0, sizeof(kp));
+    int traced = (sysctl(mib, 4, &kp, &sz, NULL, 0) == 0) ? ((kp.kp_proc.p_flag & P_TRACED) ? 1 : 0) : -1;
+    printf("[JITProbe] pid=%d P_TRACED(debugger attached)=%d\n", getpid(), traced);
+    sts2_jit_probe_case(0, "plain RWX mmap");
+    sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
+    sts2_jit_probe_case(2, "MAP_JIT + pthread_jit_write_protect_np");
+}
+
 @implementation AppDelegate
 
 static AppDelegate *sSharedDelegate = nil;
@@ -58,6 +131,7 @@ static AppDelegate *sSharedDelegate = nil;
         setvbuf(stderr, NULL, _IONBF, 0);
     }
     NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
+    sts2_run_jit_probe();
 
     sSharedDelegate = [[AppDelegate alloc] init];
     // Register as a Godot application delegate service so we receive lifecycle callbacks

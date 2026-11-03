@@ -63,7 +63,7 @@ index 14dd433..850fd5c 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -297,6 +311,56 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -297,6 +311,58 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  
  #ifndef TOOLS_ENABLED
 +#if defined(IOS_ENABLED)
@@ -82,40 +82,42 @@ index 14dd433..850fd5c 100644
 +#endif
  bool load_coreclr(void *&r_coreclr_dll_handle) {
 +#if defined(IOS_ENABLED)
++	{
 +	// On iOS, Mono is statically linked into the main executable.
-+	void *lib = dlopen(nullptr, RTLD_NOW);
-+	if (!lib) {
-+		lib = RTLD_DEFAULT;
++	void *ios_lib = dlopen(nullptr, RTLD_NOW);
++	if (!ios_lib) {
++		ios_lib = RTLD_DEFAULT;
 +	}
-+	r_coreclr_dll_handle = lib;
++	r_coreclr_dll_handle = ios_lib;
 +
-+	void *sym = dlsym(lib, "coreclr_initialize");
++	void *sym = dlsym(ios_lib, "coreclr_initialize");
 +	coreclr_initialize = sym ? (coreclr_initialize_fn)sym : mono_native::coreclr_initialize;
 +
-+	sym = dlsym(lib, "coreclr_create_delegate");
++	sym = dlsym(ios_lib, "coreclr_create_delegate");
 +	coreclr_create_delegate = sym ? (coreclr_create_delegate_fn)sym : mono_native::coreclr_create_delegate;
 +
-+	sym = dlsym(lib, "mono_threads_enter_gc_safe_region_unbalanced");
++	sym = dlsym(ios_lib, "mono_threads_enter_gc_safe_region_unbalanced");
 +	mono_enter_gc_safe_region = sym ? (mono_enter_gc_safe_region_fn)sym : (mono_enter_gc_safe_region_fn)mono_native::mono_threads_enter_gc_safe_region_unbalanced;
 +
-+	sym = dlsym(lib, "mono_install_assembly_preload_hook");
++	sym = dlsym(ios_lib, "mono_install_assembly_preload_hook");
 +	mono_install_assembly_preload_hook = sym ? (mono_install_assembly_preload_hook_fn)sym : (mono_install_assembly_preload_hook_fn)mono_native::mono_install_assembly_preload_hook;
 +
-+	sym = dlsym(lib, "mono_assembly_name_get_name");
++	sym = dlsym(ios_lib, "mono_assembly_name_get_name");
 +	mono_assembly_name_get_name = sym ? (mono_assembly_name_get_name_fn)sym : (mono_assembly_name_get_name_fn)mono_native::mono_assembly_name_get_name;
 +
-+	sym = dlsym(lib, "mono_assembly_name_get_culture");
++	sym = dlsym(ios_lib, "mono_assembly_name_get_culture");
 +	mono_assembly_name_get_culture = sym ? (mono_assembly_name_get_culture_fn)sym : (mono_assembly_name_get_culture_fn)mono_native::mono_assembly_name_get_culture;
 +
-+	sym = dlsym(lib, "mono_image_open_from_data_with_name");
++	sym = dlsym(ios_lib, "mono_image_open_from_data_with_name");
 +	mono_image_open_from_data_with_name = sym ? (mono_image_open_from_data_with_name_fn)sym : (mono_image_open_from_data_with_name_fn)mono_native::mono_image_open_from_data_with_name;
 +
-+	sym = dlsym(lib, "mono_assembly_load_from_full");
++	sym = dlsym(ios_lib, "mono_assembly_load_from_full");
 +	mono_assembly_load_from_full = sym ? (mono_assembly_load_from_full_fn)sym : (mono_assembly_load_from_full_fn)mono_native::mono_assembly_load_from_full;
 +
 +	print_verbose(String(".NET: iOS static Mono symbols bound. coreclr_initialize=") + (coreclr_initialize ? "OK" : "NULL") + ", coreclr_create_delegate=" + (coreclr_create_delegate ? "OK" : "NULL"));
 +
 +	return (coreclr_initialize != nullptr && coreclr_create_delegate != nullptr);
++	}
 +#endif
  	String coreclr_path = find_coreclr();
  

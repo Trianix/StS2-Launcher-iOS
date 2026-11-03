@@ -63,7 +63,7 @@ index 14dd433..850fd5c 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -297,6 +311,58 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -297,6 +311,65 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  
  #ifndef TOOLS_ENABLED
 +#if defined(IOS_ENABLED)
@@ -77,6 +77,7 @@ index 14dd433..850fd5c 100644
 +const char *mono_assembly_name_get_culture(MonoAssemblyName *aname);
 +MonoImage *mono_image_open_from_data_with_name(char *data, uint32_t data_len, bool need_copy, MonoImageOpenStatus *status, bool refonly, const char *name);
 +MonoAssembly *mono_assembly_load_from_full(MonoImage *image, const char *fname, MonoImageOpenStatus *status, bool refonly);
++void mono_jit_set_aot_mode(int mode);
 +}
 +}
 +#endif
@@ -113,6 +114,12 @@ index 14dd433..850fd5c 100644
 +
 +	sym = dlsym(ios_lib, "mono_assembly_load_from_full");
 +	mono_assembly_load_from_full = sym ? (mono_assembly_load_from_full_fn)sym : (mono_assembly_load_from_full_fn)mono_native::mono_assembly_load_from_full;
++
++	// iOS 26 (TXM) refuses executable JIT memory even with a debugger attached, so run Mono in
++	// interpreter-only mode unless STS2_MONO_JIT is set. 8 == MONO_AOT_MODE_INTERP_ONLY.
++	if (getenv("STS2_MONO_JIT") == nullptr) {
++		mono_native::mono_jit_set_aot_mode(8);
++	}
 +
 +	print_verbose(String(".NET: iOS static Mono symbols bound. coreclr_initialize=") + (coreclr_initialize ? "OK" : "NULL") + ", coreclr_create_delegate=" + (coreclr_create_delegate ? "OK" : "NULL"));
 +

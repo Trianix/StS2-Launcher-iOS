@@ -10,7 +10,7 @@ internal static partial class SteamConnectionConfigurationFactory
     private const ProtocolTypes AndroidProtocolTypes = ProtocolTypes.Tcp;
     internal const bool SteamKitDebugLogsSanitized = true;
     internal static bool SteamKitDebugLogsOptInEnabled
-        => OperatingSystem.IsAndroid()
+        => (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS())
             && string.Equals(
                 Environment.GetEnvironmentVariable("STS2_STEAMKIT_DEBUG_LOGS"),
                 "1",
@@ -33,21 +33,28 @@ internal static partial class SteamConnectionConfigurationFactory
 
     internal static SteamConfiguration Create()
     {
-        AndroidJavaHttpMessageHandler.Prime();
+        if (OperatingSystem.IsAndroid())
+        {
+            AndroidJavaHttpMessageHandler.Prime();
+        }
         ConfigureAndroidSteamKitDebugLogOnce();
         LogAndroidProtocolConfigurationOnce();
 
         var config = SteamConfiguration.Create(builder =>
         {
             builder.WithProtocolTypes(
-                OperatingSystem.IsAndroid() ? AndroidProtocolTypes : ProtocolTypes.WebSocket
+                (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) ? AndroidProtocolTypes : ProtocolTypes.WebSocket
             );
 
-            if (!OperatingSystem.IsAndroid())
-                return;
-
-            builder.WithHttpClientFactory(AndroidJavaHttpMessageHandler.CreateClient);
-            builder.WithMachineInfoProvider(AndroidMachineInfo);
+            if (OperatingSystem.IsAndroid())
+            {
+                builder.WithHttpClientFactory(AndroidJavaHttpMessageHandler.CreateClient);
+                builder.WithMachineInfoProvider(AndroidMachineInfo);
+            }
+            else if (OperatingSystem.IsIOS())
+            {
+                builder.WithMachineInfoProvider(AndroidMachineInfo);
+            }
         });
 
         SeedAndroidMachineIdCache(config);
@@ -56,30 +63,35 @@ internal static partial class SteamConnectionConfigurationFactory
 
     private static void LogAndroidProtocolConfigurationOnce()
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())
             return;
 
         if (Interlocked.Exchange(ref _androidProtocolLogged, 1) == 0)
-            PatchHelper.Log("[Auth] Android Steam CM protocol configured: TCP");
+        {
+            var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
+            PatchHelper.Log($"[Auth] {platform} Steam CM protocol configured: TCP");
+        }
     }
 
     private static void ConfigureAndroidSteamKitDebugLogOnce()
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())
             return;
 
         if (Interlocked.Exchange(ref _androidSteamKitDebugLogged, 1) != 0)
             return;
 
+        var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
+
         if (!SteamKitDebugLogsOptInEnabled)
         {
             DebugLog.Enabled = false;
-            PatchHelper.Log("[Auth] Android SteamKit debug logging disabled by default; set sts2_steamkit_debug_logs=1 to enable sanitized diagnostics");
+            PatchHelper.Log($"[Auth] {platform} SteamKit debug logging disabled by default; set sts2_steamkit_debug_logs=1 to enable sanitized diagnostics");
             return;
         }
 
         DebugLog.Enabled = true;
-        PatchHelper.Log("[Auth] Android SteamKit debug logging enabled with credential/token sanitization");
+        PatchHelper.Log($"[Auth] {platform} SteamKit debug logging enabled with credential/token sanitization");
         DebugLog.AddListener((category, message) =>
         {
             if (

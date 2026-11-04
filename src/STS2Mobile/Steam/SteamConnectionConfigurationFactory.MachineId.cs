@@ -21,13 +21,16 @@ internal static partial class SteamConnectionConfigurationFactory
 
     private static void SeedAndroidMachineIdCache(SteamConfiguration configuration)
     {
-        if (!OperatingSystem.IsAndroid() || configuration == null)
+        if ((!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS()) || configuration == null)
             return;
 
         lock (MachineIdPatchLock)
         {
             if (TrySeedAndroidMachineIdCache(configuration))
-                PatchHelper.Log("[Auth] SteamKit Android machine-id cache seeded");
+            {
+                var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
+                PatchHelper.Log($"[Auth] SteamKit {platform} machine-id cache seeded");
+            }
         }
     }
 

@@ -35,6 +35,10 @@ internal static class IOSGodotAppBridge
     [DllImport(NativeLib, EntryPoint = "ios_restart_app")]
     private static extern void NativeRestartApp();
 
+    [DllImport(NativeLib, EntryPoint = "ios_get_or_create_device_key")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool NativeGetOrCreateDeviceKey([Out] byte[] keyOut, int keyLen);
+
     internal static bool ShareTextFile(string path)
     {
         if (!OperatingSystem.IsIOS()) return false;
@@ -116,5 +120,12 @@ internal static class IOSGodotAppBridge
         if (!OperatingSystem.IsIOS()) return;
         try { NativeRestartApp(); }
         catch { }
+    }
+
+    internal static bool GetOrCreateDeviceKey(byte[] keyOut)
+    {
+        if (!OperatingSystem.IsIOS() || keyOut == null || keyOut.Length != 32) return false;
+        try { return NativeGetOrCreateDeviceKey(keyOut, keyOut.Length); }
+        catch { return false; }
     }
 }

@@ -1,6 +1,7 @@
 #import "IOSGodotAppBridge.h"
 #import "IOSAssemblyBootstrapper.h"
 #import <UIKit/UIKit.h>
+#import <Security/Security.h>
 #import <sys/utsname.h>
 
 extern "C" {
@@ -101,6 +102,65 @@ void ios_restart_app(void) {
         NSLog(@"[STS2Launcher iOS] Restart requested; terminating application.");
         exit(0);
     });
+}
+
+bool ios_get_or_create_device_key(uint8_t *key_out, int key_len) {
+    if (!key_out || key_len <= 0) return false;
+    
+    NSString *service = @"com.game.sts2launcher";
+    NSString *account = @"steam_credential_key";
+    
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: service,
+        (__bridge id)kSecAttrAccount: account,
+        (__bridge id)kSecReturnData: @YES,
+        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
+    };
+    
+    CFTypeRef dataTypeRef = NULL;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &dataTypeRef);
+    if (status == errSecSuccess) {
+        NSData *keyData = (__bridge_transfer NSData *)dataTypeRef;
+        if (keyData.length == (NSUInteger)key_len) {
+            memcpy(key_out, keyData.bytes, key_len);
+            return true;
+        }
+    }
+    
+    // Generate fresh cryptographically secure random bytes
+    NSMutableData *newKey = [NSMutableData dataWithLength:key_len];
+    if (SecRandomCopyBytes(kSecRandomDefault, key_len, newKey.mutableBytes) != 0) {
+        return false;
+    }
+    
+    // Delete stale item if one existed with wrong length
+    if (status == errSecSuccess) {
+        NSDictionary *deleteQuery = @{
+            (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+            (__bridge id)kSecAttrService: service,
+            (__bridge id)kSecAttrAccount: account
+        };
+        SecItemDelete((__bridge CFDictionaryRef)deleteQuery);
+    }
+    
+    NSDictionary *addQuery = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: service,
+        (__bridge id)kSecAttrAccount: account,
+        (__bridge id)kSecValueData: newKey,
+        (__bridge id)kSecAttrAccessible: (__bridge id)kSecAttrAccessibleAfterFirstUnlock
+    };
+    
+    status = SecItemAdd((__bridge CFDictionaryRef)addQuery, NULL);
+    if (status == errSecSuccess || status == errSecDuplicateItem) {
+        memcpy(key_out, newKey.bytes, key_len);
+        return true;
+    }
+    
+    NSLog(@"[STS2Launcher iOS] SecItemAdd warning status: %d", (int)status);
+    memcpy(key_out, newKey.bytes, key_len);
+    return false;
 }
 
 }

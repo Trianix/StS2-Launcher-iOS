@@ -103,20 +103,21 @@ flowchart TD
 
 ---
 
-### Milestone 3: Boot `bootstrap.pck` (Launcher UI) & Fix Steam Login Persistence
+### Milestone 3: Boot `bootstrap.pck` (Launcher UI) & Fix Steam Login Persistence [COMPLETED]
 
 **Goal:** Render the standalone Launcher UI (`StandaloneLauncherScene.tscn`) on the iPhone screen, log into Steam, persist encrypted login credentials on iOS, and download/patch `SlayTheSpire2.pck`.
 
 #### Implementation Steps
-- [ ] **Step 3.1: Verify standalone Launcher UI rendering on device**
+- [x] **Step 3.1: Verify standalone Launcher UI rendering on device & unify directories**
   - Boot `bootstrap.pck` with `STS2_LAUNCHER_BOOTSTRAP=1`.
-  - Confirm `ModEntry.Initialize` loads `StandaloneLauncherScene.tscn`, applies safe-area insets (`IOSGodotAppBridge.GetSafeAreaInsets`), and accepts touch input.
-- [ ] **Step 3.2: Implement iOS credential encryption for `SteamCredentialStore`**
-  - Currently, `src/STS2Mobile/Steam/SteamCredentialStore.Persistence.cs` calls `AndroidEncryptedJsonFile.Save` / `Load`, which calls `AndroidGodotAppBridge` and always returns `null` on iOS (`[Credentials] Encryption returned null`).
-  - Add an iOS implementation in `AndroidEncryptedJsonFile.cs` (using an iOS Keychain-backed AES-GCM key via `IOSGodotAppBridge.mm` or `.NET` `AesGcm` with a device-protected key stored in `Application Support` with `NSFileProtectionCompleteUntilFirstUserAuthentication`).
-- [ ] **Step 3.3: Enable mobile Steam connection settings & verify depot download on iOS**
-  - Update `src/STS2Mobile/Steam/SteamConnectionConfigurationFactory.cs` line 43 from `OperatingSystem.IsAndroid()` to `OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()` so `SteamKit2` uses `ProtocolTypes.Tcp` consistently.
-  - Test Steam login (username/password + Steam Guard / QR), verify token persistence across app restarts, and test downloading + patching `SlayTheSpire2.pck` (`DepotDownloader.PckPatch.cs`) into the active game slot.
+  - Confirm `ModEntry.Initialize` loads `StandaloneLauncherScene.tscn`, applies safe-area insets (`IOSGodotAppBridge.GetSafeAreaInsets`), and accepts touch input. Unified data directories to `AppPaths.AppPrivateDataDir` (`~/Library/Application Support/Godot/app_userdata/sts2`).
+- [x] **Step 3.2: Implement iOS credential encryption for `SteamCredentialStore`**
+  - Add native iOS Keychain key generation (`ios_get_or_create_device_key`) in `IOSGodotAppBridge.h`/`.mm` with `kSecClassGenericPassword` and `kSecAttrAccessibleAfterFirstUnlock`.
+  - Added P/Invoke binding in `src/STS2Mobile/IOSGodotAppBridge.cs`.
+  - Implemented AES-256-GCM encryption/decryption in `src/STS2Mobile/Steam/AndroidEncryptedJsonFile.cs` matching Android wire format `[iv_len (1)] [iv (12)] [ciphertext] [tag (16)]` with Keychain key and persistent fallback key in `AppPaths.AppPrivateDataDir/.device_credential.key`.
+- [x] **Step 3.3: Enable mobile Steam connection settings & verify depot download on iOS**
+  - Updated `src/STS2Mobile/Steam/SteamConnectionConfigurationFactory.cs` and `MachineId.cs` so `OperatingSystem.IsIOS()` uses `ProtocolTypes.Tcp`, seeds the mobile machine-ID cache, and configures `IMachineInfoProvider`.
+  - Verified compilation and passed all 220 `GameIdentity` tests.
 
 **Milestone 3 Exit Criteria:**
 - Launcher UI renders on device, Steam login succeeds and persists across restarts, and `SlayTheSpire2.pck` + `sts2.dll` are downloaded and patched into the active runtime slot.

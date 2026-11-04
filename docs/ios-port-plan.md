@@ -124,30 +124,26 @@ flowchart TD
 
 ---
 
-### Milestone 4: Implement the "Launcher → Game" Handoff on iOS
+### Milestone 4: Implement the "Launcher → Game" Handoff on iOS [COMPLETED]
 
 **Goal:** Port the dual-mode launch state machine from `android/src/com/game/sts2launcher/GodotApp.java` to iOS so clicking **Play** stages the active slot's `sts2.dll` and boots `SlayTheSpire2.pck` on the next launch.
 
 #### Implementation Steps
-- [ ] **Step 4.1: Enable `RuntimeAssemblyCachePreparer` on iOS**
-  - In `src/STS2Mobile/Launcher/RuntimeAssemblyCachePreparer.cs` (`PrepareForLaunch`), change `if (!OperatingSystem.IsAndroid())` to `if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())`.
-  - Verify that clicking **Play** copies the active branch's `sts2.dll`, `Steamworks.NET.dll`, and `Sentry.dll` into `~/Library/Application Support/Godot/app_userdata/sts2/.godot/mono/publish/arm64`.
-- [ ] **Step 4.2: Implement `RequestGameLaunchAndRestart` in `IOSGodotAppBridge`**
-  - Add `ios_request_game_launch_and_restart(const char* pck_path, const char* source)` to `ios/STS2Launcher/IOSGodotAppBridge.h`/`.mm` and bind it in `src/STS2Mobile/IOSGodotAppBridge.cs`.
-  - Write a durable launch marker file (`~/Library/Application Support/Godot/app_userdata/sts2/pending_game_launch.json`) storing the validated `pck_path`, `source`, and timestamp.
-  - Update `src/STS2Mobile/Launcher/LauncherModel.Launch.cs` to call `IOSGodotAppBridge.RequestGameLaunchAndRestart(PckPath, "launcher_play")` when `OperatingSystem.IsIOS()` is true.
-- [ ] **Step 4.3: Dynamically switch `--main-pack` and environment variables on iOS startup**
-  - Godot's iOS entry point (`main.mm`) reads `godot_cmdline` from `NSBundle.mainBundle.infoDictionary` *before* `application:didFinishLaunchingWithOptions:`.
-  - In `ios/STS2Launcher/AppDelegate.mm` (during `+load` or via `patches/godot/sts2-android-runtime.patch` before `Main::setup`), check for `pending_game_launch.json`:
-    - **If present and `pck_path` exists on disk:**
-      - Delete `pending_game_launch.json` immediately (preventing infinite crash loops if the game fails to boot).
-      - Set `STS2_LAUNCHER_BOOTSTRAP=0`, `STS2_AUTO_LAUNCH_GAME=1`, and `STS2_ACTIVE_PCK_PATH=<pck_path>`.
-      - Override `godot_cmdline` to `--main-pack <pck_path>`.
-    - **If absent (normal launch):**
-      - Set `STS2_LAUNCHER_BOOTSTRAP=1` and `STS2_AUTO_LAUNCH_GAME=0`.
-      - Set `godot_cmdline` to `--main-pack <bundle_path>/bootstrap.pck`.
-- [ ] **Step 4.4: Add iOS Relaunch Notification UX**
-  - Because iOS does not automatically restart an app process after `exit(0)`, schedule an immediate local notification banner (`UNUserNotificationCenter`) *"Slay the Spire 2 is ready — Tap to launch game"* right before `exit(0)` so the user can tap the banner or app icon to immediately boot into `SlayTheSpire2.pck`.
+- [x] **Step 4.1: Enable `RuntimeAssemblyCachePreparer` on iOS**
+  - In `src/STS2Mobile/Launcher/RuntimeAssemblyCachePreparer.cs` (`PrepareForLaunch`), enabled `PrepareIOS` for `OperatingSystem.IsIOS()`.
+  - Promotes the active branch's `sts2.dll` from the validated runtime pack and support DLLs (`Steamworks.NET.dll`, `Sentry.dll`, etc.) from the game directory into `~/Library/Application Support/Godot/app_userdata/sts2/.godot/mono/publish/arm64`.
+- [x] **Step 4.2: Implement `RequestGameLaunchAndRestart` in `IOSGodotAppBridge`**
+  - Added `ios_request_game_launch_and_restart(const char* pck_path, const char* source)` to `ios/STS2Launcher/IOSGodotAppBridge.h`/`.mm` and bound it in `src/STS2Mobile/IOSGodotAppBridge.cs`.
+  - Writes a durable launch marker file (`~/Library/Application Support/Godot/app_userdata/sts2/pending_game_launch.json`) storing `pck_path`, `source`, and timestamp.
+  - Updated `src/STS2Mobile/Launcher/LauncherModel.Launch.cs` to call `IOSGodotAppBridge.RequestGameLaunchAndRestart(readiness.RuntimeSlot.PckPath, "launcher_play")`.
+- [x] **Step 4.3: Dynamically switch `--main-pack` and environment variables on iOS startup**
+  - Implemented dynamic method swizzling on `NSBundle` (`infoDictionary` and `objectForInfoDictionaryKey:`) in `ios/STS2Launcher/AppDelegate.mm` executed in `+load`.
+  - On startup, checks for `pending_game_launch.json`:
+    - **If present and `pck_path` exists on disk:** Deletes `pending_game_launch.json` immediately (preventing crash loops), sets `STS2_LAUNCHER_BOOTSTRAP=0`, `STS2_AUTO_LAUNCH_GAME=1`, `STS2_ACTIVE_PCK_PATH=<pck_path>`, and injects `godot_cmdline` = `@[ @"--main-pack", pckPath ]`.
+    - **If absent (normal launch):** Sets `STS2_LAUNCHER_BOOTSTRAP=1`, `STS2_AUTO_LAUNCH_GAME=0`, and uses `@[ @"--main-pack", @"bootstrap.pck" ]`.
+- [x] **Step 4.4: Add iOS Relaunch Notification UX**
+  - Linked `UserNotifications.framework` in `ios/STS2Launcher.xcodeproj/project.pbxproj`.
+  - Added local notification scheduling in `ios_request_game_launch_and_restart` alerting the user *"Slay the Spire 2 is ready — Tap to launch game"* with a guaranteed fallback timer before `exit(0)`.
 
 **Milestone 4 Exit Criteria:**
 - Clicking **Play** in the Launcher stages `sts2.dll`, writes `pending_game_launch.json`, exits cleanly, and the very next app open mounts `SlayTheSpire2.pck` with `STS2_LAUNCHER_BOOTSTRAP=0`.

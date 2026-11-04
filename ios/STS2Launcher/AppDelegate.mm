@@ -1,6 +1,7 @@
 #import "AppDelegate.h"
 #import "IOSAssemblyBootstrapper.h"
 #import <AVFoundation/AVFoundation.h>
+#import <objc/runtime.h>
 #include <stdint.h>
 
 // Required by Godot 4.5.1 iOS static library (register_ios_api / unregister_ios_api)
@@ -121,6 +122,78 @@ static bool sts2_run_jit_probe() {
     return anyJitOk;
 }
 
+static NSArray *sActiveGodotCmdline = nil;
+
+static NSArray *sts2_determine_active_godot_cmdline() {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *userData = [IOSAssemblyBootstrapper userDataDirectory];
+        NSString *launchMarkerPath = [userData stringByAppendingPathComponent:@"pending_game_launch.json"];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        
+        if ([fm fileExistsAtPath:launchMarkerPath]) {
+            NSData *data = [NSData dataWithContentsOfFile:launchMarkerPath];
+            if (data) {
+                NSError *error = nil;
+                NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+                NSString *pckPath = dict[@"pck_path"];
+                
+                // Immediately remove marker to prevent infinite crash loops
+                [fm removeItemAtPath:launchMarkerPath error:nil];
+                
+                if (pckPath && [fm fileExistsAtPath:pckPath]) {
+                    NSLog(@"[STS2Launcher iOS] Bootstrapping game from pending launch marker: %@", pckPath);
+                    setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+                    setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+                    setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
+                    sActiveGodotCmdline = @[ @"--main-pack", pckPath ];
+                    return;
+                } else {
+                    NSLog(@"[STS2Launcher iOS] Pending launch PCK missing or invalid: %@; falling back to launcher", pckPath);
+                }
+            } else {
+                [fm removeItemAtPath:launchMarkerPath error:nil];
+            }
+        }
+        
+        NSLog(@"[STS2Launcher iOS] Bootstrapping launcher UI (bootstrap.pck)");
+        setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 1);
+        setenv("STS2_AUTO_LAUNCH_GAME", "0", 1);
+        sActiveGodotCmdline = @[ @"--main-pack", @"bootstrap.pck" ];
+    });
+    return sActiveGodotCmdline;
+}
+
+@interface NSBundle (STS2CmdlineSwizzle)
+@end
+
+@implementation NSBundle (STS2CmdlineSwizzle)
+
+- (NSDictionary *)sts2_infoDictionary {
+    NSDictionary *original = [self sts2_infoDictionary];
+    if (self != [NSBundle mainBundle]) {
+        return original;
+    }
+    NSMutableDictionary *modified = [original mutableCopy];
+    NSArray *cmdline = sts2_determine_active_godot_cmdline();
+    if (cmdline) {
+        modified[@"godot_cmdline"] = cmdline;
+    }
+    return modified;
+}
+
+- (id)sts2_objectForInfoDictionaryKey:(NSString *)key {
+    if (self == [NSBundle mainBundle] && [key isEqualToString:@"godot_cmdline"]) {
+        NSArray *cmdline = sts2_determine_active_godot_cmdline();
+        if (cmdline) {
+            return cmdline;
+        }
+    }
+    return [self sts2_objectForInfoDictionaryKey:key];
+}
+
+@end
+
 @implementation AppDelegate
 
 static AppDelegate *sSharedDelegate = nil;
@@ -140,6 +213,22 @@ static AppDelegate *sSharedDelegate = nil;
         setvbuf(stderr, NULL, _IONBF, 0);
     }
     NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
+
+    // Swizzle NSBundle to inject dynamic godot_cmdline (--main-pack)
+    Method origInfo = class_getInstanceMethod([NSBundle class], @selector(infoDictionary));
+    Method swizInfo = class_getInstanceMethod([NSBundle class], @selector(sts2_infoDictionary));
+    if (origInfo && swizInfo) {
+        method_exchangeImplementations(origInfo, swizInfo);
+    }
+    
+    Method origKey = class_getInstanceMethod([NSBundle class], @selector(objectForInfoDictionaryKey:));
+    Method swizKey = class_getInstanceMethod([NSBundle class], @selector(sts2_objectForInfoDictionaryKey:));
+    if (origKey && swizKey) {
+        method_exchangeImplementations(origKey, swizKey);
+    }
+    
+    // Evaluate active cmdline and set environment variables immediately
+    sts2_determine_active_godot_cmdline();
 
     sSharedDelegate = [[AppDelegate alloc] init];
     // Register as a Godot application delegate service so we receive lifecycle callbacks

@@ -35,6 +35,9 @@ internal static class IOSGodotAppBridge
     [DllImport(NativeLib, EntryPoint = "ios_restart_app")]
     private static extern void NativeRestartApp();
 
+    [DllImport(NativeLib, EntryPoint = "ios_request_game_launch_and_restart")]
+    private static extern void NativeRequestGameLaunchAndRestart(string pckPath, string source);
+
     [DllImport(NativeLib, EntryPoint = "ios_get_or_create_device_key")]
     [return: MarshalAs(UnmanagedType.I1)]
     private static extern bool NativeGetOrCreateDeviceKey([Out] byte[] keyOut, int keyLen);
@@ -119,6 +122,13 @@ internal static class IOSGodotAppBridge
     {
         if (!OperatingSystem.IsIOS()) return;
         try { NativeRestartApp(); }
+        catch { }
+    }
+
+    internal static void RequestGameLaunchAndRestart(string pckPath, string source)
+    {
+        if (!OperatingSystem.IsIOS()) return;
+        try { NativeRequestGameLaunchAndRestart(pckPath, source); }
         catch { }
     }
 

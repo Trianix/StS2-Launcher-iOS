@@ -2,6 +2,7 @@
 #import "IOSAssemblyBootstrapper.h"
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
+#import <UserNotifications/UserNotifications.h>
 #import <sys/utsname.h>
 
 extern "C" {
@@ -102,6 +103,56 @@ void ios_restart_app(void) {
         NSLog(@"[STS2Launcher iOS] Restart requested; terminating application.");
         exit(0);
     });
+}
+
+void ios_request_game_launch_and_restart(const char *pck_path, const char *source) {
+    if (!pck_path) return;
+    
+    NSString *pckPathStr = [NSString stringWithUTF8String:pck_path];
+    NSString *sourceStr = source ? [NSString stringWithUTF8String:source] : @"launcher";
+    
+    // 1. Write pending_game_launch.json
+    NSString *userData = [IOSAssemblyBootstrapper userDataDirectory];
+    NSString *launchMarkerPath = [userData stringByAppendingPathComponent:@"pending_game_launch.json"];
+    
+    NSDictionary *markerDict = @{
+        @"pck_path": pckPathStr,
+        @"source": sourceStr,
+        @"timestamp": @((long long)[[NSDate date] timeIntervalSince1970])
+    };
+    
+    NSError *jsonError = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:markerDict options:NSJSONWritingPrettyPrinted error:&jsonError];
+    if (jsonData) {
+        [jsonData writeToFile:launchMarkerPath atomically:YES];
+        NSLog(@"[STS2Launcher iOS] Wrote pending game launch marker to: %@", launchMarkerPath);
+    } else {
+        NSLog(@"[STS2Launcher iOS] Error creating launch marker JSON: %@", jsonError);
+    }
+    
+    // Fallback timer: guaranteed exit after 1.0s even if notifications are blocked or fail
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSLog(@"[STS2Launcher iOS] Launch handoff complete; terminating launcher for game boot.");
+        exit(0);
+    });
+    
+    // 2. Schedule local notification to alert the user that the game is ready
+    if (@available(iOS 10.0, *)) {
+        UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+        [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                              completionHandler:^(BOOL granted, NSError * _Nullable error) {
+            if (granted) {
+                UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+                content.title = @"Slay the Spire 2";
+                content.body = @"Game is ready! Tap to launch.";
+                content.sound = [UNNotificationSound defaultSound];
+                
+                UNTimeIntervalNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:0.2 repeats:NO];
+                UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:@"STS2GameReady" content:content trigger:trigger];
+                [center addNotificationRequest:request withCompletionHandler:nil];
+            }
+        }];
+    }
 }
 
 bool ios_get_or_create_device_key(uint8_t *key_out, int key_len) {

@@ -123,7 +123,9 @@ internal partial class LauncherModel
         if (OperatingSystem.IsIOS())
         {
             PatchHelper.Log("[Launcher iOS] Restart requested for newly prepared game files.");
-            IOSGodotAppBridge.RestartApp();
+            var pckPath = readiness.RuntimeSlot?.PckPath ?? string.Empty;
+            WriteBridgeLaunchAttempt(LauncherLaunchAttemptPhases.RestartRequested, safe ? "safe" : "normal", launchSource, attemptId, readiness, modReadiness, timingSnapshot(), "iOS accepted the durable restart request");
+            IOSGodotAppBridge.RequestGameLaunchAndRestart(pckPath, "launcher_play");
             return LauncherLaunchHandoffResult.Success(LauncherLaunchAttemptPhases.RestartRequested);
         }
         var acceptance = AndroidGodotAppBridge.RequestLaunchRestart(LauncherRestartRequest.Create(attemptId, safe, readiness));

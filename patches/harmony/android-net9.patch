@@ -262,7 +262,18 @@ index 4e88c67..d3d7d76 100644
 +        // The paired Mono runtime exports its existing architecture-specific
 +        // cache maintenance, including the ARM64 big.LITTLE-safe barriers.
 +        [DllImport("libmonosgen-2.0.so", EntryPoint = "mono_arch_flush_icache", ExactSpelling = true)]
-+        private static extern void FlushInstructionCache(IntPtr start, int length);
++        private static extern void FlushInstructionCacheAndroid(IntPtr start, int length);
++
++        [DllImport("__Internal", EntryPoint = "mono_arch_flush_icache", ExactSpelling = true)]
++        private static extern void FlushInstructionCacheIOS(IntPtr start, int length);
++
++        private static void FlushInstructionCache(IntPtr start, int length)
++        {
++            if (PlatformDetection.OS == OSKind.IOS)
++                FlushInstructionCacheIOS(start, length);
++            else
++                FlushInstructionCacheAndroid(start, length);
++        }
 +
          private sealed class MmapPagedMemoryAllocator : PagedMemoryAllocator
          {
@@ -282,3 +293,16 @@ index 1ab6785..f2b2499 100644
      <!-- If a project wants to target some subset or other set, then they can just reassign TargetFrameworks in their project file -->
  
      <!-- Conditional compilation constants are used *everywhere*, make sure common ones are set -->
+diff --git a/LocalMonoMod/src/MonoMod.Core/Platforms/PlatformTriple.cs b/LocalMonoMod/src/MonoMod.Core/Platforms/PlatformTriple.cs
+index 9b72aa8..2ef1c85 100644
+--- a/LocalMonoMod/src/MonoMod.Core/Platforms/PlatformTriple.cs
++++ b/LocalMonoMod/src/MonoMod.Core/Platforms/PlatformTriple.cs
+@@ -90,7 +90,7 @@ namespace MonoMod.Core.Platforms
+                 OSKind.Linux => new Systems.LinuxSystem(),
+                 OSKind.Android => new Systems.AndroidSystem(),
+                 OSKind.OSX => new Systems.MacOSSystem(),
+-                OSKind.IOS => throw new NotImplementedException(),
++                OSKind.IOS => new Systems.AndroidSystem(),
+                 OSKind.BSD => throw new NotImplementedException(),
+                 OSKind.Windows or OSKind.Wine => new Systems.WindowsSystem(),
+                 var kind => throw new PlatformNotSupportedException($"OS kind {kind} not supported"),

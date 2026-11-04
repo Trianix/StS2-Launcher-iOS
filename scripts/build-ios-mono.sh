@@ -47,11 +47,10 @@ cmake -S "$SOURCE_DIR/src/mono" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DGC_SUSPEND=hybrid \
     -DENABLE_MINIMAL=ssa,logging \
-    -DDISABLE_COMPONENTS=1 \
     -DCMAKE_INSTALL_LIBDIR=lib
 
-echo "Building Mono for iOS..."
-cmake --build "$BUILD_DIR" --target monosgen-static --parallel "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+echo "Building Mono and marshal-ilgen component for iOS..."
+cmake --build "$BUILD_DIR" --target monosgen-static mono-component-marshal-ilgen-static mono-component-debugger-stub-static mono-component-diagnostics_tracing-stub-static mono-component-hot_reload-stub-static --parallel "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 OUTPUT_LIB="$BUILD_DIR/mono/mini/libmonosgen-2.0.a"
 if [ ! -f "$OUTPUT_LIB" ]; then
@@ -59,10 +58,22 @@ if [ ! -f "$OUTPUT_LIB" ]; then
 fi
 
 if [ -f "$OUTPUT_LIB" ]; then
+    EXTRA_LIBS=()
     CONTAINERS_LIB="$(find "$BUILD_DIR" -name "libdn-containers*.a" | head -n 1 || true)"
     if [ -n "$CONTAINERS_LIB" ] && [ -f "$CONTAINERS_LIB" ]; then
-        echo "Combining libmonosgen and libdn-containers with libtool..."
-        libtool -static -o "$IOS_LIBS/libmonosgen-2.0.a" "$OUTPUT_LIB" "$CONTAINERS_LIB"
+        EXTRA_LIBS+=("$CONTAINERS_LIB")
+    fi
+    for comp in "marshal-ilgen-static" "debugger-stub-static" "diagnostics_tracing-stub-static" "hot_reload-stub-static"; do
+        COMP_LIB="$(find "$BUILD_DIR" -name "libmono-component-$comp*.a" | head -n 1 || true)"
+        if [ -n "$COMP_LIB" ] && [ -f "$COMP_LIB" ]; then
+            echo "Found Mono component: $COMP_LIB"
+            EXTRA_LIBS+=("$COMP_LIB")
+        fi
+    done
+
+    if [ ${#EXTRA_LIBS[@]} -gt 0 ]; then
+        echo "Combining libmonosgen, libdn-containers, and Mono components with libtool..."
+        libtool -static -o "$IOS_LIBS/libmonosgen-2.0.a" "$OUTPUT_LIB" "${EXTRA_LIBS[@]}"
     else
         cp "$OUTPUT_LIB" "$IOS_LIBS/libmonosgen-2.0.a"
     fi

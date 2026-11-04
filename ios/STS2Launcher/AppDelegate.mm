@@ -63,17 +63,19 @@ static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
 static const uint32_t kProbeCode[2] = { 0x52800540, 0xd65f03c0 };
 
 // mode 0: plain RWX mmap. mode 1: RW then mprotect(RX). mode 2: MAP_JIT + write-protect toggle.
-static void sts2_jit_probe_case(int mode, const char *name) {
+static bool sts2_jit_probe_case(int mode, const char *name) {
     struct sigaction sa, oldSegv, oldBus;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sts2_jit_probe_handler;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, &oldSegv);
-    sigaction(SIGBUS, &sa, &oldBus);
+    sigaction(SIGBUS, &oldBus);
 
+    bool ok = false;
     int sig = sigsetjmp(sJitProbeJmp, 1);
     if (sig != 0) {
         printf("[JITProbe] %s: FAULT signal %d (errno=%d)\n", name, sig, errno);
+        ok = false;
     } else {
         typedef void (*jit_protect_fn)(int);
         jit_protect_fn jitProtect = (jit_protect_fn)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np");
@@ -84,6 +86,7 @@ static void sts2_jit_probe_case(int mode, const char *name) {
         void *p = mmap(NULL, len, prot, flags, -1, 0);
         if (p == MAP_FAILED) {
             printf("[JITProbe] %s: mmap FAILED errno=%d (%s)\n", name, errno, strerror(errno));
+            ok = false;
         } else {
             if (mode == 2 && jitProtect) jitProtect(0);
             memcpy(p, kProbeCode, sizeof(kProbeCode));
@@ -96,20 +99,26 @@ static void sts2_jit_probe_case(int mode, const char *name) {
             int r = ((int (*)(void))p)();
             printf("[JITProbe] %s: OK, executed generated code, returned %d\n", name, r);
             munmap(p, len);
+            ok = (r == 42);
         }
     }
     sigaction(SIGSEGV, &oldSegv, NULL);
     sigaction(SIGBUS, &oldBus, NULL);
+    return ok;
 }
 
-static void sts2_run_jit_probe() {
+static bool sts2_run_jit_probe() {
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid() };
     struct kinfo_proc kp; size_t sz = sizeof(kp); memset(&kp, 0, sizeof(kp));
     int traced = (sysctl(mib, 4, &kp, &sz, NULL, 0) == 0) ? ((kp.kp_proc.p_flag & P_TRACED) ? 1 : 0) : -1;
     printf("[JITProbe] pid=%d P_TRACED(debugger attached)=%d\n", getpid(), traced);
-    sts2_jit_probe_case(0, "plain RWX mmap");
-    sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
-    sts2_jit_probe_case(2, "MAP_JIT + pthread_jit_write_protect_np");
+    bool rwxOk = sts2_jit_probe_case(0, "plain RWX mmap");
+    bool rxOk = sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
+    bool mapJitOk = sts2_jit_probe_case(2, "MAP_JIT + pthread_jit_write_protect_np");
+    bool anyJitOk = rwxOk || rxOk || mapJitOk;
+    printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d)\n",
+           anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk);
+    return anyJitOk;
 }
 
 @implementation AppDelegate
@@ -131,7 +140,6 @@ static AppDelegate *sSharedDelegate = nil;
         setvbuf(stderr, NULL, _IONBF, 0);
     }
     NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
-    sts2_run_jit_probe();
 
     sSharedDelegate = [[AppDelegate alloc] init];
     // Register as a Godot application delegate service so we receive lifecycle callbacks
@@ -145,6 +153,15 @@ static AppDelegate *sSharedDelegate = nil;
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     NSLog(@"[STS2Launcher iOS] Application didFinishLaunchingWithOptions");
     setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 0);
+
+    bool jitAvailable = sts2_run_jit_probe();
+    if (jitAvailable) {
+        NSLog(@"[STS2Launcher iOS] JIT is active; configuring Mono for full JIT execution");
+        setenv("STS2_MONO_JIT", "1", 1);
+    } else {
+        NSLog(@"[STS2Launcher iOS] JIT is unavailable; falling back to Mono interpreter mode");
+        unsetenv("STS2_MONO_JIT");
+    }
     
     // Configure audio session for FMOD / game audio
     NSError *audioError = nil;

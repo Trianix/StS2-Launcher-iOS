@@ -291,7 +291,7 @@ index bcd7754..ce60f52 100644
 -		gpointer res = mono_jit_compile_method (method, error);
 +		/* Obtaining an entry point is preparation, not a managed invocation.
 +		 * The compiled body retains invocation/field initialization guards. */
-+		gpointer res = jit_compile_method_with_policy (method, TRUE, TRUE, error);
++		gpointer res = jit_compile_method_with_policy (method, !mono_interp_only, TRUE, error);
  		res = mini_add_method_trampoline (method, res, mono_method_needs_static_rgctx_invoke (method, TRUE), need_unbox);
  		return res;
  	} else {
@@ -447,3 +447,47 @@ index c74c5c1..596e1b0 100644
  	case FIELD_ATTRIBUTE_FAM_OR_ASSEM:
  		if (is_valid_family_access (access_klass, member_klass, context_klass))
  			return TRUE;
+diff --git a/src/mono/mono/utils/mono-codeman.c b/src/mono/mono/utils/mono-codeman.c
+index 26f8715..a9af73a 100644
+--- a/src/mono/mono/utils/mono-codeman.c
++++ b/src/mono/mono/utils/mono-codeman.c
+@@ -735,7 +735,7 @@ mono_codeman_enable_write (void)
+ 	if (codeman_no_exec)
+ 		return;
+ #ifdef HAVE_PTHREAD_JIT_WRITE_PROTECT_NP
+-	if (__builtin_available (macOS 11, *)) {
++	if (__builtin_available (iOS 14, macOS 11, *)) {
+ 		int level = GPOINTER_TO_INT (mono_native_tls_get_value (write_level_tls_id));
+ 		level ++;
+ 		mono_native_tls_set_value (write_level_tls_id, GINT_TO_POINTER (level));
+@@ -758,7 +758,7 @@ mono_codeman_disable_write (void)
+ 	if (codeman_no_exec)
+ 		return;
+ #ifdef HAVE_PTHREAD_JIT_WRITE_PROTECT_NP
+-	if (__builtin_available (macOS 11, *)) {
++	if (__builtin_available (iOS 14, macOS 11, *)) {
+ 		int level = GPOINTER_TO_INT (mono_native_tls_get_value (write_level_tls_id));
+ 		g_assert (level);
+ 		level --;
+diff --git a/src/mono/mono/utils/mono-mmap.c b/src/mono/mono/utils/mono-mmap.c
+index 09af6f8..3305114 100644
+--- a/src/mono/mono/utils/mono-mmap.c
++++ b/src/mono/mono/utils/mono-mmap.c
+@@ -267,7 +267,7 @@ mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
+ 		return NULL;
+ #endif
+ 
+-#if defined(__APPLE__) && defined(MAP_JIT) && defined(TARGET_OSX)
++#if defined(__APPLE__) && defined(MAP_JIT) && (defined(TARGET_OSX) || defined(TARGET_IOS))
+ 	if (get_darwin_version () >= DARWIN_VERSION_MOJAVE) {
+ 		/* Check for hardened runtime */
+ 		static int is_hardened_runtime;
+@@ -286,7 +286,7 @@ mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
+ #if defined(HOST_ARM64) && !defined(HOST_MACCAT)
+ 		/* Patching code on apple silicon seems to cause random crashes without this flag */
+ 		/* No __builtin_available in old versions of Xcode that could be building Mono on x86 or amd64 */
+-		if (__builtin_available (macOS 11, *))
++		if (__builtin_available (iOS 14, macOS 11, *))
+ 			mflags |= MAP_JIT;
+ #endif
+ 	}

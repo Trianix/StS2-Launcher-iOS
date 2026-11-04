@@ -1,104 +1,176 @@
-# Slay the Spire 2 iOS Port Roadmap (JIT-Enabled Sideloading)
+# Slay the Spire 2 iOS Port — Implementation Plan & Milestones
 
-This roadmap documents the architectural strategy, phase breakdown, and execution status for porting the Slay the Spire 2 mobile launcher from Android to iOS.
+This document defines the step-by-step implementation plan and milestones for completing the iOS port of the Slay the Spire 2 mobile launcher (`sts2-ios`).
 
 ---
 
-## Architecture Overview
+## 1. Target Architecture Overview
 
 ```mermaid
 flowchart TD
-    Game["Slay the Spire 2<br/>(Godot 4.5.1 PCK + sts2.dll + Workshop Mods)"]
-    Managed["STS2Mobile (Managed C# Layer)<br/>- Harmony/MonoMod Detours<br/>- SteamKit2 Depot Downloader & Cloud Sync<br/>- Godot Launcher UI<br/>- AppPaths (Sandboxed Documents & App Support)"]
-    Engine["Godot 4.5.1 Engine (iOS)<br/>- SCons platform=ios arch=arm64 module_mono_enabled=yes<br/>- Metal Rendering Driver (CAMetalLayer)<br/>- Patched modules/mono<br/>- FMOD GDExtension"]
-    Mono["Mono Runtime (.NET 9 ios-arm64)<br/>- libmonosgen-2.0.a<br/>- JIT enabled via get-task-allow entitlement"]
-    Host["Native iOS Host Shell (Xcode)<br/>- AppDelegate.mm (AVAudioSession, lifecycle)<br/>- ViewController.mm (Metal surface, landscape layout)<br/>- IOSAssemblyBootstrapper.mm (Assembly staging)<br/>- IOSGodotAppBridge.mm (C-linkage P/Invoke exports)<br/>- Info.plist & STS2Launcher.entitlements"]
+    subgraph Boot["1. Native iOS Startup (AppDelegate + Godot Entry)"]
+        CheckMarker{"pending_game_launch.json<br/>exists & PCK valid?"}
+        LauncherMode["Launcher Mode<br/>STS2_LAUNCHER_BOOTSTRAP=1<br/>--main-pack bundle/bootstrap.pck"]
+        GameMode["Game Mode<br/>STS2_LAUNCHER_BOOTSTRAP=0<br/>STS2_AUTO_LAUNCH_GAME=1<br/>--main-pack SlayTheSpire2.pck"]
+        CheckMarker -->|No| LauncherMode
+        CheckMarker -->|Yes (consume marker)| GameMode
+    end
 
-    Game --> Managed
-    Managed --> Engine
-    Engine --> Mono
-    Engine --> Host
+    subgraph Runtime["2. Godot 4.5.1 + Mono (.NET 9 ios-arm64)"]
+        Bootstrapper["IOSAssemblyBootstrapper<br/>Stages BCL + STS2Mobile.dll into<br/>Library/Application Support/.../.godot/mono/publish/arm64"]
+        MonoInit["Mono Runtime Init<br/>+ real libmono-component-marshal-ilgen-static.a<br/>+ iOS Harmony/__Internal icache flush"]
+        ModEntry["STS2Mobile.ModEntry.Initialize()"]
+        Bootstrapper --> MonoInit --> ModEntry
+    end
+
+    subgraph Modes["3. Execution Flow"]
+        LauncherUI["StandaloneLauncherScene<br/>- SteamKit2 Login (Encrypted Token Store)<br/>- Depot Download & PCK Patching<br/>- RuntimeAssemblyCachePreparer (stages sts2.dll)<br/>- Writes pending_game_launch.json & exits"]
+        GameBoot["Slay the Spire 2 Game Boot<br/>- ModEntry.Apply() (Harmony Startup Patches)<br/>- FMOD & Spine GDExtensions<br/>- Mobile SaveManager & Steam Cloud Sync"]
+    end
+
+    LauncherMode --> Bootstrapper
+    GameMode --> Bootstrapper
+    ModEntry -->|STS2_LAUNCHER_BOOTSTRAP=1| LauncherUI
+    ModEntry -->|STS2_LAUNCHER_BOOTSTRAP=0| GameBoot
+    LauncherUI -.->|"Next App Launch"| CheckMarker
 ```
 
 ---
 
-## Phase Breakdown & Tracking
+## 2. Completed Foundation (Phases 1–4)
 
-### Phase 1: Environment, Host Shell & Toolchain Setup `[COMPLETED]`
-- [x] Create iOS project directory structure under `ios/STS2Launcher`.
-- [x] Create `ios/STS2Launcher.xcodeproj/project.pbxproj` configured for iOS 15.0+ arm64 deployment.
-- [x] Implement `AppDelegate.h`/`.mm` with `AVAudioSessionCategoryPlayback` (ambient mix enabled).
-- [x] Implement `ViewController.h`/`.mm` with `CAMetalLayer` and auto-hiding home indicator.
-- [x] Implement `IOSAssemblyBootstrapper.h`/`.mm` to stage BCL and assemblies into `~/Library/Application Support/.godot/mono/publish/arm64`.
-- [x] Implement `IOSGodotAppBridge.h`/`.mm` with C-linkage exports (`ios_share_text_file`, `ios_get_usable_space_bytes`, `ios_get_device_diagnostics`, `ios_get_version_name`, `ios_set_keep_screen_on`, `ios_get_safe_area_insets`, `ios_get_documents_dir`, `ios_restart_app`).
-- [x] Configure `Info.plist` with `UIFileSharingEnabled` (Files app integration), `LSSupportsOpeningDocumentsInPlace`, and `NSAllowsArbitraryLoads`.
-- [x] Configure `STS2Launcher.entitlements` with `get-task-allow = true` and `dynamic-codesigning = true` for JIT sideloading.
-- [x] Update `patches/godot/sts2-android-runtime.patch` to support both `ANDROID_ENABLED` and `IOS_ENABLED`.
-- [x] Update `scripts/make-bootstrap-pck.py` to support custom output targets.
-- [x] Create iOS build scripts: `scripts/build-godot-ios.sh`, `scripts/build-ios-mono.sh`, and `scripts/build-ios-local.sh`.
-- [x] Create `.github/workflows/build-ios.yml` for automated CI on `macos-14` (Apple Silicon).
-- [x] Update `.gitignore` for iOS build outputs, `.ipa`, `.xcarchive`, and Xcode schemes.
+- [x] **Godot 4.5.1 iOS Engine Build (`scripts/build-godot-ios.sh`)**: Static archive `libgodot.ios.template_release.arm64.a` built with `module_mono_enabled=yes` and `patches/godot/sts2-android-runtime.patch`.
+- [x] **Mono .NET 9 iOS Build (`scripts/build-ios-mono.sh`)**: Static archive `libmonosgen-2.0.a` compiled from `dotnet/runtime` `v9.0.7`.
+- [x] **FMOD & Spine GDExtensions**: Static FMOD Studio libraries (`libfmod_iphoneos.a`, `libfmodstudio_iphoneos.a`), `libGodotFmod.ios.template_release.universal.framework`, and `libspine_godot.ios.template_release.framework` linked and registered in `AppDelegate.mm`.
+- [x] **Godot iOS Lifecycle Integration (`AppDelegate.mm`)**: `AppDelegate` subclasses `GDTApplicationDelegate` via `+load` method swizzling so Godot's `main()` drives the Metal render loop while running custom startup hooks.
+- [x] **On-Device File Diagnostics**: `boot_diag.log` and `godot_stdout.log` written to `~/Documents` (`UIFileSharingEnabled = true`) for inspection without Xcode console attachment.
 
 ---
 
-### Phase 2: Engine & Native Runtime Compilation `[COMPLETED]`
-- [x] SCons iOS build script (`scripts/build-godot-ios.sh`) prepared.
-- [x] CMake Mono `ios-arm64` build script (`scripts/build-ios-mono.sh`) prepared.
-- [x] Run Godot 4.5.1 iOS arm64 build and verify `libgodot.ios.template_release.arm64.a`.
-- [x] Run Mono .NET 9 iOS arm64 build and verify `libmonosgen-2.0.a`.
-- [x] Link `libgodot.a` and `libmonosgen-2.0.a` into `ios/libs/`.
+## 3. Active Implementation Milestones
+
+### Milestone 1: Fix the Mono Execution & Patching Foundation
+
+**Goal:** Ensure Mono can initialize `System.Private.CoreLib`, execute P/Invoke marshaling wrappers, and run Harmony (`MonoMod.Core`) method detours on iOS without crashing on `KERN_PROTECTION_FAILURE` or missing IL generation stubs.
+
+#### Execution Mode Decision Gate
+- **Path A (Primary — Sideloaded JIT via StikDebug / `CS_DEBUGGED`):** Run Mono in JIT mode when a debugger/JIT enabler is attached, allowing Harmony (`0Harmony.dll` / `MonoMod.Core`) to compile `DynamicMethod` detours at runtime just like Android.
+- **Path B (Fallback — Zero-JIT Interpreter + Offline `Mono.Cecil` Rewriting):** If running without StikDebug/JIT permissions, Mono must run in `MONO_AOT_MODE_INTERP_ONLY` **and** all Harmony patches must be rewritten to patch `sts2.dll` on disk via `Mono.Cecil` during `RuntimePackWriter` staging.
+
+#### Implementation Steps
+- [x] **Step 1.1: Link the real `marshal-ilgen` component in `scripts/build-ios-mono.sh`**
+  - Currently, `-DDISABLE_COMPONENTS=1` in `scripts/build-ios-mono.sh` links `libmono-component-marshal-ilgen-stub-static.a`. Without the real component, Mono cannot generate P/Invoke or Reverse P/Invoke IL wrappers at runtime.
+  - Update `scripts/build-ios-mono.sh` to build and archive `libmono-component-marshal-ilgen-static.a` (instead of `-stub-static.a`) into `libmonosgen-2.0.a`.
+- [x] **Step 1.2: Fix `patches/mono/android-net9.patch` (`mini-runtime.c` & iOS JIT code allocation)**
+  - In `patches/mono/android-net9.patch` (`get_ftnptr_for_method` in `mini-runtime.c`), remove the hardcoded `jit_only = TRUE` override (`mono_jit_compile_method_with_policy(method, TRUE, TRUE, error)`) when interpreter mode is active (`mono_interp_only`), otherwise Mono forcibly invokes the JIT compiler even when configured for interpreter mode.
+  - For Path A (JIT on iOS): Ensure Mono's `mono-codeman.c` / `mono-mmap.c` does not fall back to non-executable `dlmalloc` (`rw-`) heap allocations when `TARGET_IOS` is defined; ensure code chunks are allocated via `mmap` and transitioned to `PROT_READ | PROT_EXEC` (`mprotect` + `sys_icache_invalidate`).
+- [x] **Step 1.3: Move `sts2_run_jit_probe()` in `ios/STS2Launcher/AppDelegate.mm` out of `+load`**
+  - `+[AppDelegate load]` runs during `dyld` image loading *before* `main()` and before StikDebug attaches (`P_TRACED=0`).
+  - Move `sts2_run_jit_probe()` into `application:didFinishLaunchingWithOptions:` so it accurately detects `CS_DEBUGGED` after debugger attachment and sets an environment variable (`STS2_IOS_JIT_AVAILABLE=1` or `0`) consumed by `gdmono.cpp`.
+- [x] **Step 1.4: Update `patches/harmony/android-net9.patch` for iOS (`MonoMod.Core`)**
+  - On Android, `patches/harmony/android-net9.patch` adds `AndroidSystem.cs` which P/Invokes `libmonosgen-2.0.so!mono_arch_flush_icache`.
+  - On iOS, `libmonosgen-2.0.a` is statically linked into the main executable (`__Internal`), and `OperatingSystem.IsIOS()` is not matched by `OperatingSystem.IsAndroid()`.
+  - Update the Harmony patch so `MonoMod.Core` supports `OperatingSystem.IsIOS()` and resolves `mono_arch_flush_icache` via `[DllImport("__Internal")]`.
+
+**Milestone 1 Exit Criteria:**
+- `godot_stdout.log` shows `[STS2GodotPatch] initialize_GDMono_step: mono_jit_init_version RETURNED` and `STS2Mobile.ModEntry.Initialize` starts executing in managed C#.
 
 ---
 
-### Phase 3: Native Host Shell & Lifecycle `[COMPLETED]`
-- [x] Assembly staging logic from bundle resources to sandbox user directory.
-- [x] Documents directory preparation (`Documents/StS2Launcher/Mods`) for direct file management via iOS Files app.
-- [x] Native share sheet integration (`UIActivityViewController`).
-- [x] Screen wake lock controller (`[UIApplication sharedApplication].idleTimerDisabled`).
+### Milestone 2: Unify iOS Paths & Clean Up `dotnet_bcl` Packaging
+
+**Goal:** Eliminate the directory split-brain between `~/Documents` and `~/Library/Application Support`, remove Android-contaminated BCL assemblies from the iOS bundle, and remove dead host shell files.
+
+#### Implementation Steps
+- [ ] **Step 2.1: Unify internal launcher/runtime paths under `AppPaths.AppPrivateDataDir`**
+  - On iOS, Godot's `OS.GetDataDir()` returns `~/Documents`, while `IOSGodotAppBridge.GetUserDataDir()` returns `~/Library/Application Support/Godot/app_userdata/sts2`.
+  - Update `LauncherUI.ResolveLauncherDataDirectory()` in `src/STS2Mobile/Launcher/LauncherUI.Paths.cs` so `OperatingSystem.IsIOS()` returns `AppPaths.AppPrivateDataDir` (matching Android).
+  - Update `ModEntry.RuntimeDataDirectory` in `src/STS2Mobile/ModEntry.RuntimeFiles.cs` so `OperatingSystem.IsIOS()` returns `AppPaths.AppPrivateDataDir`.
+  - Update `ios/STS2Launcher/IOSAssemblyBootstrapper.mm` so `.godot/mono/publish/arm64` is staged only under `~/Library/Application Support/Godot/app_userdata/sts2/.godot/mono/publish/arm64`, keeping `~/Documents` clean for user-visible files (`StS2Launcher/Mods`, imported `.pck` files, and diagnostic logs).
+  - Verify `patches/godot/sts2-android-runtime.patch` resolves the `.godot/mono/publish/arm64` assembly directory from the same `Application Support` path on `IOS_ENABLED`.
+- [ ] **Step 2.2: Build a clean iOS `dotnet_bcl` in `scripts/build-ios-local.sh` and `.github/workflows/build-ios.yml`**
+  - Stop extracting `assets/dotnet_bcl/*` from `tmp/ref.apk` (which contaminates the iOS app bundle with Android-patched `SteamKit2.dll` / `System.Net.WebSockets.Client.dll` and a stale 9 MB `sts2.dll`).
+  - Populate `ios/STS2Launcher/dotnet_bcl` strictly from:
+    1. `Microsoft.NETCore.App.Runtime.Mono.ios-arm64` (`9.0.7`) managed BCL assemblies + `System.Private.CoreLib.dll`.
+    2. `dotnet publish` output of `src/STS2Mobile/STS2Mobile.csproj` (`STS2Mobile.dll`, iOS-patched `0Harmony.dll`, `Mono.Cecil*.dll`, `SteamKit2.dll`, `protobuf-net*.dll`, `QRCoder.dll`, `Backbone.dll`, `GodotSharp.dll`, `GodotPlugins.dll`).
+    3. If `SteamKit2.dll` / `System.Net.WebSockets.Client.dll` require `SteamKitAndroidPatch` for Mono SHA-1/crypto workarounds on iOS, run `SteamKitAndroidPatch` explicitly against the clean NuGet assemblies and ensure `AndroidJavaCrypto` uses its managed/Apple crypto path on iOS.
+- [ ] **Step 2.3: Remove dead code `ViewController.h` / `ViewController.mm`**
+  - Delete `ios/STS2Launcher/ViewController.h` and `ios/STS2Launcher/ViewController.mm` (unused because `GDTApplicationDelegate` creates `GDTViewController`) and remove their build references from `ios/STS2Launcher.xcodeproj/project.pbxproj`.
+
+**Milestone 2 Exit Criteria:**
+- All launcher config, runtime slots, and `.godot/mono/publish/arm64` assemblies live under `Library/Application Support/Godot/app_userdata/sts2`, while `~/Documents` only contains user-facing folders and logs.
+- `dotnet_bcl` builds cleanly in CI without requiring `ref.apk`.
 
 ---
 
-### Phase 4: Audio Middleware & Native GDExtensions (FMOD & Spine for iOS) `[COMPLETED]`
-- [x] Obtain FMOD Studio Engine for iOS (`libfmod_iphoneos.a`, `libfmodstudio_iphoneos.a`) and `utopia-rise/fmod-gdextension` `6.1.0-4.5.0` (`libGodotFmod.ios.template_release.xcframework`).
-- [x] Stage and link FMOD static libraries (`ios/libs/`) and `libGodotFmod.ios.template_release.universal.framework` + `libspine_godot.ios.template_release.framework` (`4.2` for Godot `4.5.1-stable`) into the Xcode project and `.app/Frameworks/` bundle.
-- [x] Register `fmod_library_init` and `spine_godot_library_init` with Godot's `OS_AppleEmbedded` dynamic symbol lookup table and export `load_all_fmod_plugins` + `AVAudioSessionInterruptionNotification` recovery in `AppDelegate.mm`.
-- [x] Confirm PCK patcher (`DepotDownloader.PckPatch.cs` and `LocalPckRepairOperation.cs`) configures `FmodManager`, `fmod.gdextension`, and `res://banks/desktop/*.bank` on arm64/iOS (`STS2Mobile.GameIdentityTests`: 220/220 passed).
+### Milestone 3: Boot `bootstrap.pck` (Launcher UI) & Fix Steam Login Persistence
+
+**Goal:** Render the standalone Launcher UI (`StandaloneLauncherScene.tscn`) on the iPhone screen, log into Steam, persist encrypted login credentials on iOS, and download/patch `SlayTheSpire2.pck`.
+
+#### Implementation Steps
+- [ ] **Step 3.1: Verify standalone Launcher UI rendering on device**
+  - Boot `bootstrap.pck` with `STS2_LAUNCHER_BOOTSTRAP=1`.
+  - Confirm `ModEntry.Initialize` loads `StandaloneLauncherScene.tscn`, applies safe-area insets (`IOSGodotAppBridge.GetSafeAreaInsets`), and accepts touch input.
+- [ ] **Step 3.2: Implement iOS credential encryption for `SteamCredentialStore`**
+  - Currently, `src/STS2Mobile/Steam/SteamCredentialStore.Persistence.cs` calls `AndroidEncryptedJsonFile.Save` / `Load`, which calls `AndroidGodotAppBridge` and always returns `null` on iOS (`[Credentials] Encryption returned null`).
+  - Add an iOS implementation in `AndroidEncryptedJsonFile.cs` (using an iOS Keychain-backed AES-GCM key via `IOSGodotAppBridge.mm` or `.NET` `AesGcm` with a device-protected key stored in `Application Support` with `NSFileProtectionCompleteUntilFirstUserAuthentication`).
+- [ ] **Step 3.3: Enable mobile Steam connection settings & verify depot download on iOS**
+  - Update `src/STS2Mobile/Steam/SteamConnectionConfigurationFactory.cs` line 43 from `OperatingSystem.IsAndroid()` to `OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()` so `SteamKit2` uses `ProtocolTypes.Tcp` consistently.
+  - Test Steam login (username/password + Steam Guard / QR), verify token persistence across app restarts, and test downloading + patching `SlayTheSpire2.pck` (`DepotDownloader.PckPatch.cs`) into the active game slot.
+
+**Milestone 3 Exit Criteria:**
+- Launcher UI renders on device, Steam login succeeds and persists across restarts, and `SlayTheSpire2.pck` + `sts2.dll` are downloaded and patched into the active runtime slot.
 
 ---
 
-### Phase 5: Managed Layer Adaptations (`STS2Mobile` C#) `[COMPLETED]`
-- [x] **`AppPaths.cs`**:
-  - Added `OperatingSystem.IsIOS()` detection.
-  - Mapped `ExternalModsDir` to `Documents/StS2Launcher/Mods` (user accessible via iOS Files app).
-  - Bypassed Android storage permission checks (`HasStoragePermission()` returns `true`).
-  - Routed private data directory to iOS Application Support via `IOSGodotAppBridge.GetUserDataDir()`.
-- [x] **Bridge Integration**:
-  - Implemented `IOSGodotAppBridge.cs` in managed C# using `[DllImport("__Internal")]` to bind to native C functions.
-  - Connected `LauncherSharedTextFile.cs` to `IOSGodotAppBridge.ShareTextFile`.
-  - Connected `LauncherDiagnostics.cs` to iOS device diagnostics and Documents directory.
-  - Connected `DepotDownloader.FileSystem.cs` to `IOSGodotAppBridge.GetUsableSpaceBytes`.
-  - Added download screen keep-awake toggle (`IOSGodotAppBridge.SetKeepScreenOn(true/false)`) in `DepotDownloader.cs`.
-  - Routed restart calls in `LauncherModel.Launch.cs`, `AppLifecyclePatches.cs`, and `LauncherStartupRecoveryControlPanel` to `IOSGodotAppBridge.RestartApp()`.
-- [x] **Managed Build Manifests**:
-  - Updated `STS2Mobile.csproj` to support both `ios/assets/dotnet_bcl` and `android/assets/dotnet_bcl` build manifests.
+### Milestone 4: Implement the "Launcher → Game" Handoff on iOS
+
+**Goal:** Port the dual-mode launch state machine from `android/src/com/game/sts2launcher/GodotApp.java` to iOS so clicking **Play** stages the active slot's `sts2.dll` and boots `SlayTheSpire2.pck` on the next launch.
+
+#### Implementation Steps
+- [ ] **Step 4.1: Enable `RuntimeAssemblyCachePreparer` on iOS**
+  - In `src/STS2Mobile/Launcher/RuntimeAssemblyCachePreparer.cs` (`PrepareForLaunch`), change `if (!OperatingSystem.IsAndroid())` to `if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())`.
+  - Verify that clicking **Play** copies the active branch's `sts2.dll`, `Steamworks.NET.dll`, and `Sentry.dll` into `~/Library/Application Support/Godot/app_userdata/sts2/.godot/mono/publish/arm64`.
+- [ ] **Step 4.2: Implement `RequestGameLaunchAndRestart` in `IOSGodotAppBridge`**
+  - Add `ios_request_game_launch_and_restart(const char* pck_path, const char* source)` to `ios/STS2Launcher/IOSGodotAppBridge.h`/`.mm` and bind it in `src/STS2Mobile/IOSGodotAppBridge.cs`.
+  - Write a durable launch marker file (`~/Library/Application Support/Godot/app_userdata/sts2/pending_game_launch.json`) storing the validated `pck_path`, `source`, and timestamp.
+  - Update `src/STS2Mobile/Launcher/LauncherModel.Launch.cs` to call `IOSGodotAppBridge.RequestGameLaunchAndRestart(PckPath, "launcher_play")` when `OperatingSystem.IsIOS()` is true.
+- [ ] **Step 4.3: Dynamically switch `--main-pack` and environment variables on iOS startup**
+  - Godot's iOS entry point (`main.mm`) reads `godot_cmdline` from `NSBundle.mainBundle.infoDictionary` *before* `application:didFinishLaunchingWithOptions:`.
+  - In `ios/STS2Launcher/AppDelegate.mm` (during `+load` or via `patches/godot/sts2-android-runtime.patch` before `Main::setup`), check for `pending_game_launch.json`:
+    - **If present and `pck_path` exists on disk:**
+      - Delete `pending_game_launch.json` immediately (preventing infinite crash loops if the game fails to boot).
+      - Set `STS2_LAUNCHER_BOOTSTRAP=0`, `STS2_AUTO_LAUNCH_GAME=1`, and `STS2_ACTIVE_PCK_PATH=<pck_path>`.
+      - Override `godot_cmdline` to `--main-pack <pck_path>`.
+    - **If absent (normal launch):**
+      - Set `STS2_LAUNCHER_BOOTSTRAP=1` and `STS2_AUTO_LAUNCH_GAME=0`.
+      - Set `godot_cmdline` to `--main-pack <bundle_path>/bootstrap.pck`.
+- [ ] **Step 4.4: Add iOS Relaunch Notification UX**
+  - Because iOS does not automatically restart an app process after `exit(0)`, schedule an immediate local notification banner (`UNUserNotificationCenter`) *"Slay the Spire 2 is ready — Tap to launch game"* right before `exit(0)` so the user can tap the banner or app icon to immediately boot into `SlayTheSpire2.pck`.
+
+**Milestone 4 Exit Criteria:**
+- Clicking **Play** in the Launcher stages `sts2.dll`, writes `pending_game_launch.json`, exits cleanly, and the very next app open mounts `SlayTheSpire2.pck` with `STS2_LAUNCHER_BOOTSTRAP=0`.
 
 ---
 
-### Phase 6: Steam Download & PCK Patching Pipeline `[PENDING]`
-- [ ] Test `SteamKit2` depot download on iOS (TLS / WebSocket socket performance).
-- [ ] Verify `DepotDownloader.PckPatch.cs` patches `SlayTheSpire2.pck` cleanly on iOS.
-- [ ] Test Steam Cloud save upload/download over mobile connection.
+### Milestone 5: Enable Mobile Gameplay Patches & Cloud Save Sync on iOS
 
----
+**Goal:** Ensure all mobile Harmony patches, save management, Workshop mod loading, and FMOD/Spine integrations execute properly when `SlayTheSpire2.pck` boots on iOS.
 
-### Phase 7: Sideloading Packaging & Device Acceptance `[IN PROGRESS]`
-- [x] Generate `.ipa` package using `scripts/build-ios-local.sh` or GitHub Actions.
-- [x] Sideload onto iPhone via SideStore / StikDebug (`com.trianix.sts2launcher.D692498JD2`).
-- [x] Implement runtime logging to `Documents/app_output.log` and double-stage BCL assemblies to `Documents/.godot/mono/publish/arm64`.
-- [x] Identify iOS 26 / A15 TXM W^X JIT execution barrier via diagnostic JIT probe.
-- [x] Configure Mono runtime in interpreter-only mode (`MONO_AOT_MODE_INTERP_ONLY`) to bypass JIT code page restrictions.
-- [ ] Verify standalone launcher startup on physical device.
-- [ ] Verify Steam login, depot download, and PCK patch execution.
-- [ ] Verify game boot, touch input, audio playback (FMOD), and Cloud save sync.
+#### Implementation Steps
+- [ ] **Step 5.1: Update `OperatingSystem.IsAndroid()` guards across `src/STS2Mobile/Patches/`**
+  - Introduce a shared helper (e.g., `MobilePlatform.IsMobile => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()`) and update mobile-wide guards in:
+    - `src/STS2Mobile/Patches/LauncherPatches.cs`:
+      - `StartOnMainMenu` (line 69)
+      - `ConstructDefault` for `SaveManager` / `AndroidLocalSaveStore` / `SaveSyncService` (line 78)
+      - `NormalizeUserDataPath` (line 91)
+    - `src/STS2Mobile/Patches/ModLoaderPatches.cs`:
+      - Mobile mod discovery and Workshop mod staging (lines 38, 99)
+    - `src/STS2Mobile/Patches/SettingsPatches.MobileDefaults.cs`, `AndroidAtlasCompatibilityPatches.cs`, `AndroidAssetPreloadPatches.cs`, and `ControllerInputPatches.cs`.
+- [ ] **Step 5.2: End-to-End Game Verification on Physical Device**
+  - Verify `ModEntry.Apply` applies all critical Harmony patches without failure (`patchResult.CriticalFailed == false`).
+  - Verify main menu rendering, Spine character skeletons, and FMOD bank audio playback (including recovery after iOS audio interruption/lock screen).
+  - Verify starting a run, touch input ergonomics, local save persistence, and Steam Cloud save sync.
 
-See [iOS Runtime Findings](ios-runtime-findings.md) for full diagnostic records, crash analyses, and architectural decisions.
+**Milestone 5 Exit Criteria:**
+- Slay the Spire 2 boots to the main menu, plays audio via FMOD, renders Spine animations, syncs Steam Cloud saves, and plays through combat on iOS.

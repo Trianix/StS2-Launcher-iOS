@@ -62,7 +62,7 @@ flowchart TD
   - Currently, `-DDISABLE_COMPONENTS=1` in `scripts/build-ios-mono.sh` links `libmono-component-marshal-ilgen-stub-static.a`. Without the real component, Mono cannot generate P/Invoke or Reverse P/Invoke IL wrappers at runtime.
   - Update `scripts/build-ios-mono.sh` to build and archive `libmono-component-marshal-ilgen-static.a` (instead of `-stub-static.a`) into `libmonosgen-2.0.a`.
 - [x] **Step 1.2: Fix `patches/mono/android-net9.patch` (`mini-runtime.c` & iOS JIT code allocation)**
-  - In `patches/mono/android-net9.patch` (`get_ftnptr_for_method` in `mini-runtime.c`), remove the hardcoded `jit_only = TRUE` override (`mono_jit_compile_method_with_policy(method, TRUE, TRUE, error)`) when interpreter mode is active (`mono_interp_only`), otherwise Mono forcibly invokes the JIT compiler even when configured for interpreter mode.
+  - In `patches/mono/android-net9.patch` (`get_ftnptr_for_method` in `mini-runtime.c`), remove the hardcoded `jit_only = TRUE` override (`mono_jit_compile_method_with_policy(method, TRUE, TRUE, error)`) when interpreter mode is active (`mono_use_interpreter`), otherwise Mono forcibly invokes the JIT compiler even when configured for interpreter mode.
   - For Path A (JIT on iOS): Ensure Mono's `mono-codeman.c` / `mono-mmap.c` does not fall back to non-executable `dlmalloc` (`rw-`) heap allocations when `TARGET_IOS` is defined; ensure code chunks are allocated via `mmap` and transitioned to `PROT_READ | PROT_EXEC` (`mprotect` + `sys_icache_invalidate`).
 - [x] **Step 1.3: Move `sts2_run_jit_probe()` in `ios/STS2Launcher/AppDelegate.mm` out of `+load`**
   - `+[AppDelegate load]` runs during `dyld` image loading *before* `main()` and before StikDebug attaches (`P_TRACED=0`).

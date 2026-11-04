@@ -291,7 +291,7 @@ index bcd7754..ce60f52 100644
 -		gpointer res = mono_jit_compile_method (method, error);
 +		/* Obtaining an entry point is preparation, not a managed invocation.
 +		 * The compiled body retains invocation/field initialization guards. */
-+		gpointer res = jit_compile_method_with_policy (method, !mono_interp_only, TRUE, error);
++		gpointer res = jit_compile_method_with_policy (method, !mono_use_interpreter, TRUE, error);
  		res = mini_add_method_trampoline (method, res, mono_method_needs_static_rgctx_invoke (method, TRUE), need_unbox);
  		return res;
  	} else {

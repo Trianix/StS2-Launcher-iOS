@@ -25,7 +25,7 @@ deleted file mode 100644
 index 027ff91..0000000
 --- a/Harmony/Internal/FaultBlockRewriter.cs
 +++ /dev/null
-@@ -1,96 +0,0 @@
+@@ -1,96 +1,0 @@
 -using System;
 -using System.Collections.Generic;
 -using System.Reflection.Emit;
@@ -251,7 +251,7 @@ diff --git a/LocalMonoMod/src/MonoMod.Core/Platforms/Systems/AndroidSystem.cs b/
 index 4e88c67..d3d7d76 100644
 --- a/LocalMonoMod/src/MonoMod.Core/Platforms/Systems/AndroidSystem.cs
 +++ b/LocalMonoMod/src/MonoMod.Core/Platforms/Systems/AndroidSystem.cs
-@@ -106,8 +106,15 @@ namespace MonoMod.Core.Platforms.Systems
+@@ -106,8 +106,26 @@ namespace MonoMod.Core.Platforms.Systems
              var target = new Span<byte>((void*)patchTarget, data.Length);
              _ = target.TryCopyTo(backup);
              data.CopyTo(target);

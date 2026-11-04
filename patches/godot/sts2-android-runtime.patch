@@ -2,7 +2,7 @@ diff --git a/modules/mono/godotsharp_dirs.cpp b/modules/mono/godotsharp_dirs.cpp
 index aed7eff..fee7afa 100644
 --- a/modules/mono/godotsharp_dirs.cpp
 +++ b/modules/mono/godotsharp_dirs.cpp
-@@ -169,9 +169,9 @@ private:
+@@ -169,9 +169,13 @@ private:
  		String arch = Engine::get_singleton()->get_architecture_name();
  		String appname_safe = Path::get_csharp_project_name();
  		String packed_path = "res://.godot/mono/publish/" + arch;
@@ -133,7 +133,7 @@ index 14dd433..850fd5c 100644
  	String coreclr_path = find_coreclr();
  
  	bool is_monovm = false;
-@@ -331,7 +395,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+@@ -331,7 +404,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
  	ERR_FAIL_COND_V(err != OK, false);
  	coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
  
@@ -146,7 +146,7 @@ index 14dd433..850fd5c 100644
  	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
  	ERR_FAIL_COND_V(err != OK, false);
  	mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
-@@ -518,7 +586,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
+@@ -518,7 +595,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
  #endif
  
  #ifndef TOOLS_ENABLED
@@ -155,7 +155,7 @@ index 14dd433..850fd5c 100644
  MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
  	constexpr bool ref_only = false;
  
-@@ -538,6 +606,20 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
+@@ -538,6 +615,25 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
  	String path = GodotSharpDirs::get_api_assemblies_dir();
  	path = path.path_join(assembly_name);
  
@@ -181,7 +181,7 @@ index 14dd433..850fd5c 100644
  	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
  
  	if (!FileAccess::exists(path)) {
-@@ -577,8 +659,8 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -577,8 +673,8 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  
  	String assembly_name = Path::get_csharp_project_name();
  
@@ -192,7 +192,7 @@ index 14dd433..850fd5c 100644
  	// other platforms can find the assemblies with the default lookup.
  	if (mono_install_assembly_preload_hook != nullptr) {
  		mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
-@@ -601,6 +683,74 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -601,6 +697,74 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  			(void **)&godot_plugins_initialize);
  	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
  
@@ -267,7 +267,7 @@ index 14dd433..850fd5c 100644
  	return godot_plugins_initialize;
  }
  #endif
-@@ -705,8 +855,35 @@ void GDMono::initialize() {
+@@ -705,8 +869,35 @@ void GDMono::initialize() {
  
  	print_verbose(".NET: GodotPlugins initialized");
  

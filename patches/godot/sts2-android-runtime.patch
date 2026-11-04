@@ -9,9 +9,13 @@ index aed7eff..fee7afa 100644
 -#ifdef ANDROID_ENABLED
 -		api_assemblies_dir = packed_path;
 -		print_verbose(".NET: Android platform detected. Setting api_assemblies_dir directly to pck path: " + api_assemblies_dir);
-+#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
++#if defined(ANDROID_ENABLED)
 +		api_assemblies_dir = OS::get_singleton()->get_user_data_dir().path_join(".godot").path_join("mono").path_join("publish").path_join(arch);
-+		print_verbose(".NET: Mobile platform detected. Setting api_assemblies_dir to app data path: " + api_assemblies_dir);
++		print_verbose(".NET: Android platform detected. Setting api_assemblies_dir to app data path: " + api_assemblies_dir);
++#elif defined(IOS_ENABLED)
++		String app_support = OS::get_singleton()->get_user_data_dir().get_base_dir().path_join("Library").path_join("Application Support").path_join("Godot").path_join("app_userdata").path_join("sts2");
++		api_assemblies_dir = app_support.path_join(".godot").path_join("mono").path_join("publish").path_join(arch);
++		print_verbose(".NET: iOS platform detected. Setting api_assemblies_dir to Application Support: " + api_assemblies_dir);
  #else
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
@@ -157,13 +161,18 @@ index 14dd433..850fd5c 100644
  
 +#if defined(IOS_ENABLED)
 +	if (!FileAccess::exists(path)) {
-+		String bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join("assemblies").path_join(assembly_name);
-+		if (FileAccess::exists(bundle_path)) {
-+			path = bundle_path;
++		String docs_path = OS::get_singleton()->get_user_data_dir().path_join(".godot").path_join("mono").path_join("publish").path_join(Engine::get_singleton()->get_architecture_name()).path_join(assembly_name);
++		if (FileAccess::exists(docs_path)) {
++			path = docs_path;
 +		} else {
-+			bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join(assembly_name);
++			String bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join("assemblies").path_join(assembly_name);
 +			if (FileAccess::exists(bundle_path)) {
 +				path = bundle_path;
++			} else {
++				bundle_path = OS::get_singleton()->get_executable_path().get_base_dir().path_join(assembly_name);
++				if (FileAccess::exists(bundle_path)) {
++					path = bundle_path;
++				}
 +			}
 +		}
 +	}

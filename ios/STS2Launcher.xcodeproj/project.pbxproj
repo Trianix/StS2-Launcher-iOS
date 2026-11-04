@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		10000002 /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000002 /* AppDelegate.mm */; };
-		10000003 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000003 /* ViewController.mm */; };
 		10000004 /* IOSAssemblyBootstrapper.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000004 /* IOSAssemblyBootstrapper.mm */; };
 		10000005 /* IOSGodotAppBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20000005 /* IOSGodotAppBridge.mm */; };
 		10000006 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 20000006 /* LaunchScreen.storyboard */; };
@@ -18,8 +17,6 @@
 		00000001 /* STS2Launcher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = STS2Launcher.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		20000002 /* AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
 		20000007 /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
-		20000003 /* ViewController.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
-		20000008 /* ViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
 		20000004 /* IOSAssemblyBootstrapper.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = IOSAssemblyBootstrapper.mm; sourceTree = "<group>"; };
 		20000009 /* IOSAssemblyBootstrapper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSAssemblyBootstrapper.h; sourceTree = "<group>"; };
 		20000005 /* IOSGodotAppBridge.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = IOSGodotAppBridge.mm; sourceTree = "<group>"; };
@@ -53,8 +50,6 @@
 			children = (
 				20000007 /* AppDelegate.h */,
 				20000002 /* AppDelegate.mm */,
-				20000008 /* ViewController.h */,
-				20000003 /* ViewController.mm */,
 				20000009 /* IOSAssemblyBootstrapper.h */,
 				20000004 /* IOSAssemblyBootstrapper.mm */,
 				20000010 /* IOSGodotAppBridge.h */,
@@ -145,7 +140,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				10000002 /* AppDelegate.mm in Sources */,
-				10000003 /* ViewController.mm in Sources */,
 				10000004 /* IOSAssemblyBootstrapper.mm in Sources */,
 				10000005 /* IOSGodotAppBridge.mm in Sources */,
 			);

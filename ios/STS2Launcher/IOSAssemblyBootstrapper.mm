@@ -49,7 +49,7 @@
 + (BOOL)stageAssembliesWithError:(NSError **)error {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *bundlePath = [[NSBundle mainBundle] resourcePath];
-    NSArray<NSString *> *targetPublishDirs = @[[self publishDirectory], [self documentsPublishDirectory]];
+    NSArray<NSString *> *targetPublishDirs = @[[self publishDirectory]];
     
     for (NSString *targetPublish in targetPublishDirs) {
         NSLog(@"[STS2Mobile iOS] Staging assemblies into: %@", targetPublish);

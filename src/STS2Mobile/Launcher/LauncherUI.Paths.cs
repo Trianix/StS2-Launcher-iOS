@@ -8,24 +8,9 @@ internal sealed partial class LauncherUI
 {
     private static string ResolveLauncherDataDirectory()
     {
-        if (OperatingSystem.IsAndroid())
+        if (OperatingSystem.IsIOS() || OperatingSystem.IsAndroid())
         {
-            try
-            {
-                var bridgedFilesDir = AndroidGodotAppBridge.GetInternalFilesDirPath();
-                if (BootstrapTrace.TryNormalizeDirectory(bridgedFilesDir, out var normalizedBridgedFilesDir))
-                    return normalizedBridgedFilesDir;
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"Launcher internal files dir bridge unavailable: {ex.Message}");
-            }
-
-            var androidFilesDir = System.Environment.GetEnvironmentVariable("STS2_ANDROID_FILES_DIR");
-            if (BootstrapTrace.TryNormalizeDirectory(androidFilesDir, out var normalizedAndroidFilesDir))
-                return normalizedAndroidFilesDir;
-
-            return BootstrapTrace.ResolveFallbackDataDirectory();
+            return AppPaths.AppPrivateDataDir;
         }
 
         try

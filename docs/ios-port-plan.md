@@ -82,19 +82,19 @@ flowchart TD
 **Goal:** Eliminate the directory split-brain between `~/Documents` and `~/Library/Application Support`, remove Android-contaminated BCL assemblies from the iOS bundle, and remove dead host shell files.
 
 #### Implementation Steps
-- [ ] **Step 2.1: Unify internal launcher/runtime paths under `AppPaths.AppPrivateDataDir`**
+- [x] **Step 2.1: Unify internal launcher/runtime paths under `AppPaths.AppPrivateDataDir`**
   - On iOS, Godot's `OS.GetDataDir()` returns `~/Documents`, while `IOSGodotAppBridge.GetUserDataDir()` returns `~/Library/Application Support/Godot/app_userdata/sts2`.
   - Update `LauncherUI.ResolveLauncherDataDirectory()` in `src/STS2Mobile/Launcher/LauncherUI.Paths.cs` so `OperatingSystem.IsIOS()` returns `AppPaths.AppPrivateDataDir` (matching Android).
   - Update `ModEntry.RuntimeDataDirectory` in `src/STS2Mobile/ModEntry.RuntimeFiles.cs` so `OperatingSystem.IsIOS()` returns `AppPaths.AppPrivateDataDir`.
   - Update `ios/STS2Launcher/IOSAssemblyBootstrapper.mm` so `.godot/mono/publish/arm64` is staged only under `~/Library/Application Support/Godot/app_userdata/sts2/.godot/mono/publish/arm64`, keeping `~/Documents` clean for user-visible files (`StS2Launcher/Mods`, imported `.pck` files, and diagnostic logs).
   - Verify `patches/godot/sts2-android-runtime.patch` resolves the `.godot/mono/publish/arm64` assembly directory from the same `Application Support` path on `IOS_ENABLED`.
-- [ ] **Step 2.2: Build a clean iOS `dotnet_bcl` in `scripts/build-ios-local.sh` and `.github/workflows/build-ios.yml`**
+- [x] **Step 2.2: Build a clean iOS `dotnet_bcl` in `scripts/build-ios-local.sh` and `.github/workflows/build-ios.yml`**
   - Stop extracting `assets/dotnet_bcl/*` from `tmp/ref.apk` (which contaminates the iOS app bundle with Android-patched `SteamKit2.dll` / `System.Net.WebSockets.Client.dll` and a stale 9 MB `sts2.dll`).
   - Populate `ios/STS2Launcher/dotnet_bcl` strictly from:
     1. `Microsoft.NETCore.App.Runtime.Mono.ios-arm64` (`9.0.7`) managed BCL assemblies + `System.Private.CoreLib.dll`.
     2. `dotnet publish` output of `src/STS2Mobile/STS2Mobile.csproj` (`STS2Mobile.dll`, iOS-patched `0Harmony.dll`, `Mono.Cecil*.dll`, `SteamKit2.dll`, `protobuf-net*.dll`, `QRCoder.dll`, `Backbone.dll`, `GodotSharp.dll`, `GodotPlugins.dll`).
     3. If `SteamKit2.dll` / `System.Net.WebSockets.Client.dll` require `SteamKitAndroidPatch` for Mono SHA-1/crypto workarounds on iOS, run `SteamKitAndroidPatch` explicitly against the clean NuGet assemblies and ensure `AndroidJavaCrypto` uses its managed/Apple crypto path on iOS.
-- [ ] **Step 2.3: Remove dead code `ViewController.h` / `ViewController.mm`**
+- [x] **Step 2.3: Remove dead code `ViewController.h` / `ViewController.mm`**
   - Delete `ios/STS2Launcher/ViewController.h` and `ios/STS2Launcher/ViewController.mm` (unused because `GDTApplicationDelegate` creates `GDTViewController`) and remove their build references from `ios/STS2Launcher.xcodeproj/project.pbxproj`.
 
 **Milestone 2 Exit Criteria:**

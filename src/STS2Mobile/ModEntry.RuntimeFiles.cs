@@ -51,6 +51,11 @@ public static partial class ModEntry
     {
         get
         {
+            if (OperatingSystem.IsIOS() || OperatingSystem.IsAndroid())
+            {
+                return AppPaths.AppPrivateDataDir;
+            }
+
             try
             {
                 var dataDir = OS.GetDataDir();

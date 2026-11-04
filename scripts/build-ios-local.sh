@@ -38,11 +38,13 @@ if [ ! -d "$REF_EXTRACT_DIR/assets/dotnet_bcl" ]; then
     unzip -q -o "$REF_APK" "assets/dotnet_bcl/*" -d "$REF_EXTRACT_DIR"
 fi
 
-cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/"* "$IOS_BCL_ASSETS_DIR/"
-cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/"* "$IOS_BUNDLE_BCL_DIR/"
+# Copy only necessary reference assemblies from ref-apk, avoiding Android BCL contamination
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$UPSTREAM_PUBLISH_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$UPSTREAM_PUBLISH_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$UPSTREAM_PUBLISH_DIR/" 2>/dev/null || true
+cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$IOS_BCL_ASSETS_DIR/"
+cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$IOS_BCL_ASSETS_DIR/"
+cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$IOS_BCL_ASSETS_DIR/" 2>/dev/null || true
 
 IOS_RUNTIME_NUPKG="$DEPS_CACHE_DIR/microsoft.netcore.app.runtime.mono.ios-arm64.9.0.7.nupkg"
 if [ ! -f "$IOS_RUNTIME_NUPKG" ]; then
@@ -56,10 +58,14 @@ if [ ! -d "$IOS_RUNTIME_EXTRACT/runtimes" ]; then
     unzip -q -o "$IOS_RUNTIME_NUPKG" "runtimes/ios-arm64/*" -d "$IOS_RUNTIME_EXTRACT"
 fi
 
-echo "Staging iOS-specific .NET 9.0.7 BCL and native interop libraries..."
+echo "Staging clean iOS-specific .NET 9.0.7 BCL and native interop libraries..."
+rm -rf "$IOS_BUNDLE_BCL_DIR"/*
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/lib/net9.0/"*.dll "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/System.Private.CoreLib.dll" "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/libSystem."*.dylib "$IOS_FRAMEWORKS_DIR/"
+cp -f "$IOS_BCL_ASSETS_DIR/0Harmony.dll" "$IOS_BUNDLE_BCL_DIR/"
+cp -f "$IOS_BCL_ASSETS_DIR/GodotSharp.dll" "$IOS_BUNDLE_BCL_DIR/"
+cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$IOS_BUNDLE_BCL_DIR/" 2>/dev/null || true
 
 # 0b. Stage FMOD Studio Engine & fmod-gdextension (6.1.0-4.5.0) + spine-godot (4.2 / 4.5.1-stable) for iOS
 mkdir -p "$IOS_DIR/libs"
@@ -157,6 +163,8 @@ for dll in SteamKit2.dll protobuf-net.dll protobuf-net.Core.dll System.IO.Hashin
     fi
 done
 cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
+# Ensure sts2.dll is NEVER packaged into the launcher bundle; it is downloaded/staged per-slot at runtime
+rm -f "$IOS_BUNDLE_BCL_DIR/sts2.dll" "$ASSEMBLIES_DIR/sts2.dll"
 
 # 4. Build with Xcode
 mkdir -p "$ARTIFACTS_DIR"

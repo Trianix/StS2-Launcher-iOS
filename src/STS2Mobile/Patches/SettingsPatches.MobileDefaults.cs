@@ -48,7 +48,7 @@ internal static partial class SettingsPatches
 
     private static bool SkipIntroLogoPrefix(ref bool __result)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return true;
 
         __result = true;

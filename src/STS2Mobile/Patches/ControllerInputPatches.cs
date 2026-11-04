@@ -30,7 +30,7 @@ internal static class ControllerInputPatches
 
     internal static void Apply(Harmony harmony)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return;
 
         PatchNInputManagerInit(harmony);

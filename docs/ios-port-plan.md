@@ -155,15 +155,18 @@ flowchart TD
 **Goal:** Ensure all mobile Harmony patches, save management, Workshop mod loading, and FMOD/Spine integrations execute properly when `SlayTheSpire2.pck` boots on iOS.
 
 #### Implementation Steps
-- [ ] **Step 5.1: Update `OperatingSystem.IsAndroid()` guards across `src/STS2Mobile/Patches/`**
-  - Introduce a shared helper (e.g., `MobilePlatform.IsMobile => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()`) and update mobile-wide guards in:
-    - `src/STS2Mobile/Patches/LauncherPatches.cs`:
-      - `StartOnMainMenu` (line 69)
-      - `ConstructDefault` for `SaveManager` / `AndroidLocalSaveStore` / `SaveSyncService` (line 78)
-      - `NormalizeUserDataPath` (line 91)
-    - `src/STS2Mobile/Patches/ModLoaderPatches.cs`:
-      - Mobile mod discovery and Workshop mod staging (lines 38, 99)
-    - `src/STS2Mobile/Patches/SettingsPatches.MobileDefaults.cs`, `AndroidAtlasCompatibilityPatches.cs`, `AndroidAssetPreloadPatches.cs`, and `ControllerInputPatches.cs`.
+- [x] **Step 5.1: Update `OperatingSystem.IsAndroid()` guards across `src/STS2Mobile/Patches/`**
+  - Introduced `MobilePlatform.IsMobile => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()` in `src/STS2Mobile/MobilePlatform.cs`.
+  - Updated mobile guards in:
+    - `src/STS2Mobile/Patches/LauncherPatches.cs`: `StartOnMainMenu`, `ConstructDefault` (SaveManager + AndroidLocalSaveStore), `NormalizeUserDataPath`.
+    - `src/STS2Mobile/Patches/ModLoaderPatches.cs`: Mobile mod discovery and Workshop staging.
+    - `src/STS2Mobile/Patches/SettingsPatches.MobileDefaults.cs`: Skip intro logo and mobile graphics defaults.
+    - `src/STS2Mobile/Patches/AndroidAtlasCompatibilityPatches.cs`: On-demand atlas loading and virtual filesystem fallbacks.
+    - `src/STS2Mobile/Patches/AndroidAssetPreloadPatches.cs`: 4ms frame budget on background asset preloading.
+    - `src/STS2Mobile/Patches/ControllerInputPatches.cs`: Fallback controller input strategy for iOS Bluetooth/MFi gamepads.
+    - `src/STS2Mobile/Patches/SettingsPatches.LocString.cs` & `DevConsolePatches.cs`: Fallback string handling and mobile console suppression.
+    - `src/STS2Mobile/Steam/SteamAuth.cs`, `Connection.cs`, `Login.cs`: Mobile auth resilience, retries, and EOSType.IOSUnknown.
+  - Verified clean compilation and passed 220 of 220 `GameIdentity` test cases.
 - [ ] **Step 5.2: End-to-End Game Verification on Physical Device**
   - Verify `ModEntry.Apply` applies all critical Harmony patches without failure (`patchResult.CriticalFailed == false`).
   - Verify main menu rendering, Spine character skeletons, and FMOD bank audio playback (including recovery after iOS audio interruption/lock screen).

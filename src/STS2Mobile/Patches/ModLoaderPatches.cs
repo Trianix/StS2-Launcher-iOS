@@ -35,7 +35,7 @@ internal static class ModLoaderPatches
 
     internal static void Apply(Harmony harmony)
     {
-        if (OperatingSystem.IsAndroid() && !_startupCleanupComplete)
+        if (MobilePlatform.IsMobile && !_startupCleanupComplete)
         {
             try { new SteamWorkshopStager().CleanupBeforeFirstLoad(); }
             catch (SteamWorkshopInventoryException error)
@@ -96,7 +96,7 @@ internal static class ModLoaderPatches
     {
         if (_prepared == null)
         {
-            if (OperatingSystem.IsAndroid()) throw new InvalidOperationException("Release information was requested before an installation was prepared.");
+            if (MobilePlatform.IsMobile) throw new InvalidOperationException("Release information was requested before an installation was prepared.");
             return true;
         }
         if (string.IsNullOrWhiteSpace(_prepared.ReleaseInfoPath)) return true;

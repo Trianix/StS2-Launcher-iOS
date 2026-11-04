@@ -57,7 +57,7 @@ internal sealed partial class SteamAuth : IDisposable, IAuthenticator
         LogMessage?.Invoke(msg);
     }
 
-    private static bool RequiresPersistentAuthConnection => !OperatingSystem.IsAndroid();
+    private static bool RequiresPersistentAuthConnection => !MobilePlatform.IsMobile;
 
     private void RegisterConnectionCallbacks()
     {

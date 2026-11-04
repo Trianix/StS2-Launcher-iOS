@@ -92,7 +92,7 @@ internal static class AndroidAtlasCompatibilityPatches
 
     private static bool LoadAllAtlasesPrefix()
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return true;
 
         int invalidated = InvalidateFallbackResolutionCache();
@@ -108,7 +108,7 @@ internal static class AndroidAtlasCompatibilityPatches
 
     internal static void ObserveMountedResourceSetIdentity(string identity)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return;
 
         var result = ResourceChangeTracker.ObserveMountedResourceSet(identity);
@@ -129,7 +129,7 @@ internal static class AndroidAtlasCompatibilityPatches
 
     private static void LoadResourcePackPostfix(bool __result)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return;
 
         var result = ResourceChangeTracker.RecordResourcePackLoad(
@@ -147,7 +147,7 @@ internal static class AndroidAtlasCompatibilityPatches
 
     private static bool AtlasResourceExistsPrefix(string path, ref bool __result)
     {
-        if (!OperatingSystem.IsAndroid() || !TryResolveFallback(path, out var resolution))
+        if (!MobilePlatform.IsMobile || !TryResolveFallback(path, out var resolution))
             return true;
 
         __result = true;
@@ -157,7 +157,7 @@ internal static class AndroidAtlasCompatibilityPatches
 
     private static bool AtlasResourceLoadPrefix(string path, ref Variant __result)
     {
-        if (!OperatingSystem.IsAndroid() || !TryResolveFallback(path, out var resolution))
+        if (!MobilePlatform.IsMobile || !TryResolveFallback(path, out var resolution))
             return true;
 
         if (!FallbackResolutionCache.IsCurrent(resolution.Generation)

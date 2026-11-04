@@ -43,7 +43,7 @@ internal static partial class SettingsPatches
         Exception __exception
     )
     {
-        if (__exception == null || !OperatingSystem.IsAndroid())
+        if (__exception == null || !MobilePlatform.IsMobile)
             return __exception;
 
         if (__exception is not NullReferenceException)

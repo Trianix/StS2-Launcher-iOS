@@ -54,7 +54,7 @@ internal static class DevConsolePatches
 
     private static Exception ReadyFinalizer(object __instance, Exception __exception)
     {
-        if (OperatingSystem.IsAndroid())
+        if (MobilePlatform.IsMobile)
             HideAndroidConsole(__instance);
 
         if (__exception == null)

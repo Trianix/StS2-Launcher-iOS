@@ -75,7 +75,7 @@ internal sealed partial class SteamAuth
 
     private async Task<bool> TryConnectWithRetriesAsync(Action begin, string startFailureMessage, string retryMessage)
     {
-        var android = OperatingSystem.IsAndroid();
+        var android = MobilePlatform.IsMobile;
         var retryCount = android ? AndroidConnectRetryCount : ConnectRetryCount;
         var retryDelayMs = android ? AndroidConnectRetryDelayMs : ConnectRetryDelayMs;
         var timeoutMs = android ? AndroidConnectTimeoutMs : ConnectTimeoutMs;

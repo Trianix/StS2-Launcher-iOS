@@ -28,7 +28,7 @@ internal static class AndroidAssetPreloadPatches
 
     internal static void Apply(Harmony harmony)
     {
-        if (OperatingSystem.IsAndroid()) ApplyForRuntime(harmony);
+        if (MobilePlatform.IsMobile) ApplyForRuntime(harmony);
     }
 
     // Also exercised with real threaded resources by the desktop Godot probe.

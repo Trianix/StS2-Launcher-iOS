@@ -115,7 +115,7 @@ internal sealed partial class SteamAuth
 
     private static bool IsTransientAndroidAuthFailure(Exception ex)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return false;
         return (ex is TimeoutException or TaskCanceledException or HttpRequestException or IOException) || IsSteamConnectionInvalidOperation(ex);
     }
@@ -148,6 +148,13 @@ internal sealed partial class SteamAuth
             details.DeviceFriendlyName = AndroidDeviceFriendlyName;
             details.PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient;
             details.ClientOSType = EOSType.AndroidUnknown;
+            details.WebsiteID = SteamClientWebsiteId;
+        }
+        else if (OperatingSystem.IsIOS())
+        {
+            details.DeviceFriendlyName = "StS2 Launcher iOS";
+            details.PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient;
+            details.ClientOSType = EOSType.IOSUnknown;
             details.WebsiteID = SteamClientWebsiteId;
         }
 

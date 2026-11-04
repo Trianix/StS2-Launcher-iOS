@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace STS2Mobile.Patches;
 
-// Installs Harmony hooks for the mobile launcher and Android startup behavior.
+// Installs Harmony hooks for the mobile launcher and mobile startup behavior.
 internal static class LauncherPatches
 {
     internal static void Apply(Harmony harmony)
@@ -66,7 +66,7 @@ internal static class LauncherPatches
 
     private static bool StartOnMainMenu(ref bool __result)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return true;
 
         __result = true;
@@ -75,10 +75,11 @@ internal static class LauncherPatches
 
     private static bool ConstructDefault(ref SaveManager __result)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return true;
 
-        PatchHelper.Log("[Save] Constructing Android gameplay SaveManager");
+        var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
+        PatchHelper.Log($"[Save] Constructing {platform} gameplay SaveManager");
         __result = new SaveManager(
             new AndroidLocalSaveStore(
                 SaveSyncService.NotifyGameplayMutationCommitted
@@ -89,7 +90,7 @@ internal static class LauncherPatches
 
     private static void NormalizeUserDataPath(ref string __result, PlatformType? platformOverride, ulong? userIdOverride)
     {
-        if (!OperatingSystem.IsAndroid()) return;
+        if (!MobilePlatform.IsMobile) return;
         var platform = PlatformUtil.PrimaryPlatform;
         var userId = PlatformUtil.GetLocalPlayerId(platform);
         var otherAccount = (platformOverride.HasValue && platformOverride.Value != platform)

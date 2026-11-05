@@ -447,3 +447,149 @@ index c74c5c1..596e1b0 100644
  	case FIELD_ATTRIBUTE_FAM_OR_ASSEM:
  		if (is_valid_family_access (access_klass, member_klass, context_klass))
  			return TRUE;
+diff --git a/src/mono/mono/mini/tramp-arm64.c b/src/mono/mono/mini/tramp-arm64.c
+index f486998..0c6f22d 100644
+--- a/src/mono/mono/mini/tramp-arm64.c
++++ b/src/mono/mono/mini/tramp-arm64.c
+@@ -673,6 +673,101 @@ mono_arch_create_sdb_trampoline (gboolean single_step, MonoTrampInfo **info, gbo
+ 	return (guint8*)MINI_ADDR_TO_FTNPTR (buf);
+ }
+ 
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++static __attribute__((naked, noinline, used))
++void mono_interp_to_native_trampoline_arm64 (void *targetaddr, void *ccontext)
++{
++	__asm__ volatile (
++		"sub sp, sp, #48\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x20, x21, [x29, #16]\n"
++		"stp x1, x0, [x29, #32]\n"
++		"ldr w0, [x1, #152]\n"
++		"mov x16, sp\n"
++		"sub x16, x16, x0\n"
++		"mov sp, x16\n"
++		"mov x16, sp\n"
++		"ldr x17, [x1, #160]\n"
++		"1:\n"
++		"cmp x0, #0\n"
++		"b.eq 2f\n"
++		"ldr x2, [x17], #8\n"
++		"str x2, [x16], #8\n"
++		"sub x0, x0, #8\n"
++		"b 1b\n"
++		"2:\n"
++		"ldr x16, [x29, #32]\n"
++		"ldp x0, x1, [x16, #0]\n"
++		"ldp x2, x3, [x16, #16]\n"
++		"ldp x4, x5, [x16, #32]\n"
++		"ldp x6, x7, [x16, #48]\n"
++		"ldr x8, [x16, #64]\n"
++		"ldp x20, x21, [x16, #72]\n"
++		"ldp d0, d1, [x16, #88]\n"
++		"ldp d2, d3, [x16, #104]\n"
++		"ldp d4, d5, [x16, #120]\n"
++		"ldp d6, d7, [x16, #136]\n"
++		"ldr x16, [x29, #40]\n"
++		"blr x16\n"
++		"ldr x16, [x29, #32]\n"
++		"stp x0, x1, [x16, #0]\n"
++		"stp x2, x3, [x16, #16]\n"
++		"stp x4, x5, [x16, #32]\n"
++		"stp x6, x7, [x16, #48]\n"
++		"stp x20, x21, [x16, #72]\n"
++		"stp d0, d1, [x16, #88]\n"
++		"stp d2, d3, [x16, #104]\n"
++		"stp d4, d5, [x16, #120]\n"
++		"stp d6, d7, [x16, #136]\n"
++		"ldp x20, x21, [x29, #16]\n"
++		"mov sp, x29\n"
++		"ldp x29, x30, [sp, #0]\n"
++		"add sp, sp, #48\n"
++		"ret\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_native_to_interp_trampoline_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #192\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x0, x1, [x29, #16]\n"
++		"stp x2, x3, [x29, #32]\n"
++		"stp x4, x5, [x29, #48]\n"
++		"stp x6, x7, [x29, #64]\n"
++		"str x8, [x29, #80]\n"
++		"stp x20, x21, [x29, #88]\n"
++		"stp d0, d1, [x29, #104]\n"
++		"stp d2, d3, [x29, #120]\n"
++		"stp d4, d5, [x29, #136]\n"
++		"stp d6, d7, [x29, #152]\n"
++		"add x0, x29, #192\n"
++		"str x0, [x29, #176]\n"
++		"add x0, x29, #16\n"
++		"ldr x1, [x15, #8]\n"
++		"ldr x16, [x15, #0]\n"
++		"blr x16\n"
++		"ldp x0, x1, [x29, #16]\n"
++		"ldp x2, x3, [x29, #32]\n"
++		"ldp x4, x5, [x29, #48]\n"
++		"ldp x6, x7, [x29, #64]\n"
++		"ldp x20, x21, [x29, #88]\n"
++		"ldp d0, d1, [x29, #104]\n"
++		"ldp d2, d3, [x29, #120]\n"
++		"ldp d4, d5, [x29, #136]\n"
++		"ldp d6, d7, [x29, #152]\n"
++		"mov sp, x29\n"
++		"ldp x29, x30, [sp, #0]\n"
++		"add sp, sp, #192\n"
++		"ret\n"
++	);
++}
++#endif
++
+ /*
+  * mono_arch_get_interp_to_native_trampoline:
+  *
+@@ -682,6 +777,11 @@ gpointer
+ mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
+ {
+ #ifndef DISABLE_INTERPRETER
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (guint8*)MINI_ADDR_TO_FTNPTR ((gpointer)mono_interp_to_native_trampoline_arm64);
++#else
+ 	guint8 *start = NULL, *code;
+ 	guint8 *label_start_copy, *label_exit_copy;
+ 	MonoJumpInfo *ji = NULL;
+@@ -799,6 +899,7 @@ mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
+ 		*info = mono_tramp_info_create ("interp_to_native_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+ 
+ 	return (guint8*)MINI_ADDR_TO_FTNPTR (start);
++#endif
+ #else
+ 	g_assert_not_reached ();
+ 	return NULL;
+@@ -809,6 +910,11 @@ gpointer
+ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
+ {
+ #ifndef DISABLE_INTERPRETER
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (guint8*)MINI_ADDR_TO_FTNPTR ((gpointer)mono_native_to_interp_trampoline_arm64);
++#else
+ 	guint8 *start = NULL, *code;
+ 	MonoJumpInfo *ji = NULL;
+ 	GSList *unwind_ops = NULL;
+@@ -888,6 +994,7 @@ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
+ 		*info = mono_tramp_info_create ("native_to_interp_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+ 
+ 	return (guint8*)MINI_ADDR_TO_FTNPTR (start);
++#endif
+ #else
+ 	g_assert_not_reached ();
+ 	return NULL;

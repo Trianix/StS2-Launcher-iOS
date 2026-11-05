@@ -156,6 +156,44 @@ Deployment / Sideloading: SideStore / StikDebug (DDI auto-mounted via TSS servic
 
 ---
 
+### Issue J: Interp-to-Native Dynamic Trampoline W^X Heap Violation (`ves_pinvoke_method`)
+- **Symptom:** After rendering and `Main::setup2()` successfully started on Metal, the app crashed with `SIGSEGV` (signal 11) at dynamic heap instruction pointer `0x10f01e100`.
+- **Stack Trace:**
+  ```
+  141: 0x103a31504 - STS2Launcher : ves_pinvoke_method
+  142: 0x103a24810 - STS2Launcher : mono_interp_exec_method
+  143: 0x103a22214 - STS2Launcher : interp_runtime_invoke
+  144: 0x1038e46e4 - STS2Launcher : mono_runtime_try_invoke
+  145: 0x1038e6874 - STS2Launcher : mono_runtime_invoke
+  146: 0x10111a49c - STS2Launcher : ios_invoke_godot_plugin_init
+  ...
+  175: Memory around native instruction pointer (0x10f01e100):
+  0x10f01e100  ff c3 00 d1 fd 7b 00 a9 fd 03 00 91 a1 13 00 f9 ...
+  182: Managed Stacktrace:
+        at System.RuntimeTypeHandle:GetAttributes <0x0001c>
+        at System.RuntimeType:GetAttributes <0x00088>
+        at System.RuntimeTypeHandle:GetAttributes <0x00014>
+        at System.RuntimeType:GetAttributeFlagsImpl <0x0000e>
+        at System.Type:get_IsInterface <0x00016>
+        at System.RuntimeType:GetBaseType <0x00014>
+        at System.RuntimeType:get_IsEnum <0x0000e>
+        at System.Runtime.CompilerServices.DefaultInterpolatedStringHandler:AppendFormatted <0x0005e>
+        at STS2Mobile.GodotSharpBootstrap:Initialize <0x0007a>
+        at STS2Mobile.ModEntry:InitializeGodotSharp <0x00026>
+  ```
+- **Root Cause:**
+  1. In Mono interpreter mode, calling internal calls (icalls) or P/Invokes (e.g. `System.RuntimeTypeHandle:GetAttributes`) routes through `ves_pinvoke_method` in `mono/mini/interp/interp.c`.
+  2. `ves_pinvoke_method` calls `get_interp_to_native_trampoline()`, which invokes `mono_arch_get_interp_to_native_trampoline()`.
+  3. In `mono/mini/tramp-arm64.c`, `mono_arch_get_interp_to_native_trampoline()` dynamically allocates heap memory via `mono_global_codeman_reserve()` and JIT-emits ARM64 instructions (`sub sp, sp, #48; stp x29, x30, [sp]; ...; blr x16; ...; ret`).
+  4. On physical iOS devices without JIT / without a debugger attached (`P_TRACED=0`), Apple's A15 Bionic TXM hardware blocks CPU execution of any dynamic heap/codeman memory with `SIGSEGV` (signal 11).
+  5. The generated machine code contains no runtime-specific variables or hardcoded addresses; it is a fixed calling-convention bridge that unpacks `CallContext` registers (`x0..x8`, `d0..d7`) and stack arguments before calling `targetaddr` via `blr x16`.
+- **Decision & Fix:**
+  1. Implemented static, code-signed `__TEXT`-resident assembly functions `mono_interp_to_native_trampoline_arm64` and `mono_native_to_interp_trampoline_arm64` marked with `__attribute__((naked, noinline, used))` directly in `src/mono/mono/mini/tramp-arm64.c`.
+  2. Updated `mono_arch_get_interp_to_native_trampoline()` and `mono_arch_get_native_to_interp_trampoline()` on `TARGET_ARM64 / __aarch64__` to return function pointers to these static text functions and set `*info = NULL`.
+  3. Zero dynamic code generation occurs for interpreter transitions, fully respecting iOS W^X and TXM enforcement without requiring JIT entitlements.
+
+---
+
 ## 3. Verification & Diagnostic Commands
 
 - **Read Device App Output Log:**

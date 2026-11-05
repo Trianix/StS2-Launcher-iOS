@@ -138,35 +138,6 @@ static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
 // mov w0,#42 ; ret
 static const uint32_t kProbeCode[2] = { 0x52800540, 0xd65f03c0 };
 
-extern "C" void *sts2_jit26_prepare_region(void *address, size_t length) {
-#if defined(__aarch64__)
-    register void *x0 __asm__("x0") = address;
-    register size_t x1 __asm__("x1") = length;
-    register uint64_t x16 __asm__("x16") = 1;
-    __asm__ volatile (
-        "brk #0xf00d\n"
-        : "+r"(x0)
-        : "r"(x1), "r"(x16)
-        : "memory"
-    );
-    return x0;
-#else
-    return address;
-#endif
-}
-
-extern "C" void sts2_jit26_detach() {
-#if defined(__aarch64__)
-    register uint64_t x16 __asm__("x16") = 0;
-    __asm__ volatile (
-        "brk #0xf00d\n"
-        :
-        : "r"(x16)
-        : "memory"
-    );
-#endif
-}
-
 typedef void (*MonoLogCallback)(const char *log_domain, const char *log_level, const char *message, int fatal, void *user_data);
 typedef void (*mono_trace_set_log_handler_fn)(MonoLogCallback callback, void *user_data);
 typedef void (*mono_trace_set_print_handler_fn)(void (*handler)(const char *string, int is_stdout));
@@ -199,47 +170,6 @@ static void sts2_install_mono_log_hooks() {
     if (set_err) {
         set_err(sts2_mono_print_callback);
     }
-}
-
-static bool sts2_jit_probe_case_jit26(const char *name) {
-    struct sigaction sa, oldSegv, oldBus, oldTrap;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_handler = sts2_jit_probe_handler;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, &oldSegv);
-    sigaction(SIGBUS, &sa, &oldBus);
-    sigaction(SIGTRAP, &sa, &oldTrap);
-
-    bool ok = false;
-    int sig = sigsetjmp(sJitProbeJmp, 1);
-    if (sig != 0) {
-        printf("[JITProbe] %s: FAULT signal %d (errno=%d)\n", name, sig, errno);
-        ok = false;
-    } else {
-        size_t len = 16384;
-        void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-        if (p == MAP_FAILED) {
-            printf("[JITProbe] %s: mmap FAILED errno=%d (%s)\n", name, errno, strerror(errno));
-            ok = false;
-        } else {
-            memcpy(p, kProbeCode, sizeof(kProbeCode));
-            sys_icache_invalidate(p, sizeof(kProbeCode));
-            void *rx = sts2_jit26_prepare_region(p, len);
-            if (!rx) {
-                printf("[JITProbe] %s: prepare_region returned NULL\n", name);
-            } else {
-                sys_icache_invalidate(rx, sizeof(kProbeCode));
-                int r = ((int (*)(void))rx)();
-                printf("[JITProbe] %s: OK, executed generated code, returned %d\n", name, r);
-                ok = (r == 42);
-            }
-            munmap(p, len);
-        }
-    }
-    sigaction(SIGSEGV, &oldSegv, NULL);
-    sigaction(SIGBUS, &oldBus, NULL);
-    sigaction(SIGTRAP, &oldTrap, NULL);
-    return ok;
 }
 
 // mode 0: plain RWX mmap. mode 1: RW then mprotect(RX). mode 2: MAP_JIT + write-protect toggle.
@@ -295,10 +225,9 @@ static bool sts2_run_jit_probe() {
     bool rwxOk = sts2_jit_probe_case(0, "plain RWX mmap");
     bool rxOk = sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
     bool mapJitOk = sts2_jit_probe_case(2, "MAP_JIT + pthread_jit_write_protect_np");
-    bool jit26Ok = sts2_jit_probe_case_jit26("StikDebug universal.js (brk #0xf00d)");
-    bool anyJitOk = rwxOk || rxOk || mapJitOk || jit26Ok;
-    printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d, jit26=%d)\n",
-           anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk, jit26Ok);
+    bool anyJitOk = rwxOk || rxOk || mapJitOk;
+    printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d)\n",
+           anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk);
     fflush(stdout);
     return anyJitOk;
 }
@@ -337,23 +266,20 @@ extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debug
         return true;
     }
 
-    if (traced == 1 || cs_debugged == 1) {
-        bool ok = sts2_run_jit_probe();
+    // Only enable JIT if the probe confirms executable memory can actually run
+    bool jitWorking = sts2_run_jit_probe();
+    if (jitWorking) {
         setenv("STS2_MONO_JIT", "1", 1);
+        unsetenv("STS2_MONO_FORCE_INTERP");
         sJitConfirmed = true;
-        NSLog(@"[STS2Launcher iOS] Debugger attached (P_TRACED=%d, CS_DEBUGGED=%d, probe=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged, ok ? 1 : 0);
+        NSLog(@"[STS2Launcher iOS] JIT confirmed working (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
         return true;
     }
 
-    // Continuous probe: test if RW->RX mprotect execution succeeds (StikDebug or kernel-level JIT entitlement)
-    bool rxOk = sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
-    if (rxOk) {
-        setenv("STS2_MONO_JIT", "1", 1);
-        sJitConfirmed = true;
-        NSLog(@"[STS2Launcher iOS] JIT probe succeeded (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
-        return true;
-    }
-
+    // JIT is not available; ensure Mono runs in Interpreter mode
+    unsetenv("STS2_MONO_JIT");
+    setenv("STS2_MONO_FORCE_INTERP", "1", 1);
+    NSLog(@"[STS2Launcher iOS] JIT probe unavailable (P_TRACED=%d, CS_DEBUGGED=%d); Mono will use Interpreter mode", traced, cs_debugged);
     return false;
 }
 

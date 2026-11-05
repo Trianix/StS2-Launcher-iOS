@@ -67,7 +67,7 @@ index 14dd433..d8e8c3a 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -296,7 +310,144 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -296,7 +310,145 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  }
  
  #ifndef TOOLS_ENABLED
@@ -197,11 +197,12 @@ index 14dd433..d8e8c3a 100644
 +
 +	const char *jit_env = getenv("STS2_MONO_JIT");
 +	const char *force_interp = getenv("STS2_MONO_FORCE_INTERP");
-+	if (force_interp != nullptr && strcmp(force_interp, "1") == 0) {
-+		print_line(".NET: STS2_MONO_FORCE_INTERP=1 set; calling mono_jit_set_aot_mode(8)");
++	bool use_interp = (force_interp != nullptr && strcmp(force_interp, "1") == 0) || (jit_env == nullptr || strcmp(jit_env, "1") != 0);
++	if (use_interp) {
++		print_line(".NET: iOS Mono Interpreter mode active (MONO_AOT_MODE_INTERP_ONLY = 8)");
 +		mono_native::mono_jit_set_aot_mode(8);
 +	} else {
-+		print_line(String(".NET: iOS Mono JIT mode active (STS2_MONO_JIT=") + (jit_env ? jit_env : "unset") + ")");
++		print_line(".NET: iOS Mono JIT mode active (STS2_MONO_JIT=1)");
 +	}
 +
 +	print_line(String(".NET: iOS static Mono symbols bound. coreclr_initialize=") + (coreclr_initialize ? "OK" : "NULL") + ", coreclr_create_delegate=" + (coreclr_create_delegate ? "OK" : "NULL"));

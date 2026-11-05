@@ -1,16 +1,16 @@
 diff --git a/drivers/apple_embedded/app_delegate_service.mm b/drivers/apple_embedded/app_delegate_service.mm
-index 07b52b9..dc7ab04 100644
+index 07b52b9..3ed105b 100644
 --- a/drivers/apple_embedded/app_delegate_service.mm
 +++ b/drivers/apple_embedded/app_delegate_service.mm
 @@ -48,6 +48,7 @@ extern char **gargv;
  
  extern int apple_embedded_main(int, char **);
  extern void apple_embedded_finish();
-+extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced);
++extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debugged);
  
  @implementation GDTAppDelegateService
  
-@@ -61,30 +62,75 @@ enum {
+@@ -61,30 +62,76 @@ enum {
  };
  
  static GDTViewController *mainViewController = nil;
@@ -34,8 +34,9 @@ index 07b52b9..dc7ab04 100644
 +	}
 +	int pid = 0;
 +	int traced = 0;
-+	if (sts2_ios_is_jit_ready(&pid, &traced)) {
-+		fprintf(stderr, "[Godot iOS] JIT ready detected (pid=%d, P_TRACED=%d)! Starting Godot engine...\n", pid, traced);
++	int cs_debugged = 0;
++	if (sts2_ios_is_jit_ready(&pid, &traced, &cs_debugged)) {
++		fprintf(stderr, "[Godot iOS] JIT ready detected (pid=%d, P_TRACED=%d, CS_DEBUGGED=%d)! Starting Godot engine...\n", pid, traced, cs_debugged);
 +		fflush(stderr);
 +		[timer invalidate];
 +		sJitPollTimer = nil;
@@ -44,11 +45,11 @@ index 07b52b9..dc7ab04 100644
 +		sJitStatusLabel.text = [NSString stringWithFormat:
 +			@"Slay the Spire 2 — iOS\n\n"
 +			@"Waiting for StikDebug JIT...\n\n"
-+			@"PID: %d  |  P_TRACED: %d\n\n"
++			@"PID: %d  |  P_TRACED: %d  |  CS_DEBUGGED: %d\n\n"
 +			@"1. Keep this app open in the background\n"
 +			@"2. Open StikDebug and attach JIT to 'Slay the Spire 2'\n"
 +			@"3. Return here — the launcher will start automatically.",
-+			pid, traced];
++			pid, traced, cs_debugged];
 +	}
 +}
  
@@ -60,7 +61,7 @@ index 07b52b9..dc7ab04 100644
 -	self.window = [[UIWindow alloc] init];
 -#endif
 +- (void)sts2_forceStartWithoutJit:(id)sender {
-+	fprintf(stderr, "[Godot iOS] User requested force start without JIT.\n");
++	fprintf(stderr, "[Godot iOS] User requested force start without waiting.\n");
 +	fflush(stderr);
 +	[self sts2_startGodotEngine];
 +}
@@ -100,7 +101,7 @@ index 07b52b9..dc7ab04 100644
  	}
  
  	GDTViewController *viewController = [[GDTViewController alloc] init];
-@@ -130,11 +176,81 @@ static GDTViewController *mainViewController = nil;
+@@ -130,11 +177,82 @@ static GDTViewController *mainViewController = nil;
  	}
  
  	[[AVAudioSession sharedInstance] setCategory:category withOptions:options error:nil];
@@ -121,16 +122,17 @@ index 07b52b9..dc7ab04 100644
 +
 +	int pid = 0;
 +	int traced = 0;
++	int cs_debugged = 0;
 +	const char *skipWait = getenv("STS2_SKIP_JIT_WAIT");
-+	bool jitReady = sts2_ios_is_jit_ready(&pid, &traced);
++	bool jitReady = sts2_ios_is_jit_ready(&pid, &traced, &cs_debugged);
 +	if (jitReady || (skipWait != nullptr && strcmp(skipWait, "1") == 0)) {
-+		fprintf(stderr, "[Godot iOS] JIT ready at launch (pid=%d, P_TRACED=%d). Starting Godot immediately.\n", pid, traced);
++		fprintf(stderr, "[Godot iOS] JIT ready at launch (pid=%d, P_TRACED=%d, CS_DEBUGGED=%d). Starting Godot immediately.\n", pid, traced, cs_debugged);
 +		fflush(stderr);
 +		[self sts2_startGodotEngine];
 +		return YES;
 +	}
 +
-+	fprintf(stderr, "[Godot iOS] JIT not yet attached at launch (pid=%d, P_TRACED=%d). Showing StikDebug wait screen...\n", pid, traced);
++	fprintf(stderr, "[Godot iOS] JIT not yet attached at launch (pid=%d, P_TRACED=%d, CS_DEBUGGED=%d). Showing StikDebug wait screen...\n", pid, traced, cs_debugged);
 +	fflush(stderr);
 +
 +	UIViewController *waitVC = [[UIViewController alloc] init];
@@ -145,11 +147,11 @@ index 07b52b9..dc7ab04 100644
 +	label.text = [NSString stringWithFormat:
 +		@"Slay the Spire 2 — iOS\n\n"
 +		@"Waiting for StikDebug JIT...\n\n"
-+		@"PID: %d  |  P_TRACED: %d\n\n"
++		@"PID: %d  |  P_TRACED: %d  |  CS_DEBUGGED: %d\n\n"
 +		@"1. Keep this app open in the background\n"
 +		@"2. Open StikDebug and attach JIT to 'Slay the Spire 2'\n"
 +		@"3. Return here — the launcher will start automatically.",
-+		pid, traced];
++		pid, traced, cs_debugged];
 +	[waitVC.view addSubview:label];
 +	sJitStatusLabel = label;
 +
@@ -182,7 +184,7 @@ index 07b52b9..dc7ab04 100644
  	if ([notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
  		if ([[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] isEqualToNumber:[NSNumber numberWithInt:AVAudioSessionInterruptionTypeBegan]]) {
  			NSLog(@"Audio interruption began");
-@@ -147,13 +263,15 @@ static GDTViewController *mainViewController = nil;
+@@ -147,13 +265,15 @@ static GDTViewController *mainViewController = nil;
  }
  
  - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
@@ -200,7 +202,7 @@ index 07b52b9..dc7ab04 100644
  }
  
  // When application goes to background (e.g. user switches to another app or presses Home),
-@@ -167,19 +285,37 @@ static GDTViewController *mainViewController = nil;
+@@ -167,19 +287,38 @@ static GDTViewController *mainViewController = nil;
  // notification panel by swiping from the upper part of the screen.
  
  - (void)applicationWillResignActive:(UIApplication *)application {
@@ -215,8 +217,9 @@ index 07b52b9..dc7ab04 100644
 +	if (!sGodotEngineStarted) {
 +		int pid = 0;
 +		int traced = 0;
-+		if (sts2_ios_is_jit_ready(&pid, &traced)) {
-+			fprintf(stderr, "[Godot iOS] JIT ready on applicationDidBecomeActive (pid=%d, P_TRACED=%d). Starting Godot...\n", pid, traced);
++		int cs_debugged = 0;
++		if (sts2_ios_is_jit_ready(&pid, &traced, &cs_debugged)) {
++			fprintf(stderr, "[Godot iOS] JIT ready on applicationDidBecomeActive (pid=%d, P_TRACED=%d, CS_DEBUGGED=%d). Starting Godot...\n", pid, traced, cs_debugged);
 +			fflush(stderr);
 +			[self sts2_startGodotEngine];
 +		}

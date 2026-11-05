@@ -20,7 +20,7 @@ index aed7eff..1232e8b 100644
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
 diff --git a/modules/mono/mono_gd/gd_mono.cpp b/modules/mono/mono_gd/gd_mono.cpp
-index 14dd433..40f45b1 100644
+index 14dd433..d8e8c3a 100644
 --- a/modules/mono/mono_gd/gd_mono.cpp
 +++ b/modules/mono/mono_gd/gd_mono.cpp
 @@ -55,7 +55,7 @@
@@ -287,16 +287,6 @@ index 14dd433..40f45b1 100644
 +	print_line(".NET: CoreCLR initialized (domain_id=" + itos(domain_id) + ")");
 +
 +#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
-+	// Creating the first delegate attaches this native engine thread in Mono's
-+	// GC-unsafe state. Native rendering can then block on a shader mutex while a
-+	// loader worker waits for this thread to suspend for GC. Managed callbacks
-+	// already enter/restore their own GC state; leave the host in native mode.
-+	void *native_stack_marker = nullptr;
-+	if (mono_enter_gc_safe_region != nullptr) {
-+		mono_enter_gc_safe_region(&native_stack_marker);
-+	}
-+	print_line(".NET: Mobile Mono host entered GC-safe native execution");
-+
 +	int sts2mobile_init_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
 +			"STS2Mobile.ModEntry",
@@ -329,7 +319,7 @@ index 14dd433..40f45b1 100644
 +	} else {
 +		print_line(".NET: STS2Mobile bootstrap probe returned " + itos(sts2mobile_probe()));
 +	}
-+
+ 
 +	int sts2mobile_harmony_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
 +			"STS2Mobile.ModEntry",
@@ -351,7 +341,7 @@ index 14dd433..40f45b1 100644
 +	} else {
 +		print_line(".NET: STS2Mobile launcher-only delegate loaded");
 +	}
- 
++
 +	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
 +	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
 +	if (is_launcher_bootstrap && sts2mobile_initialize != nullptr) {
@@ -368,6 +358,16 @@ index 14dd433..40f45b1 100644
 +			godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(sts2mobile_initialize);
 +		}
 +	}
++
++#if defined(ANDROID_ENABLED)
++	// On Android, creating the first delegate attaches this native engine thread in Mono's
++	// GC-unsafe state. Transition to GC-safe so rendering doesn't block GC suspensions.
++	void *native_stack_marker = nullptr;
++	if (mono_enter_gc_safe_region != nullptr) {
++		mono_enter_gc_safe_region(&native_stack_marker);
++		print_line(".NET: Android Mono host entered GC-safe native execution");
++	}
++#endif
 +#else
  	coreclr_create_delegate(coreclr_handle, domain_id,
  			assembly_name.utf8().get_data(),

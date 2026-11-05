@@ -198,7 +198,7 @@ static bool sts2_run_jit_probe() {
     return anyJitOk;
 }
 
-extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced) {
+extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debugged) {
     static bool sJitConfirmed = false;
     int pid = (int)getpid();
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
@@ -207,44 +207,45 @@ extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced) {
     memset(&kp, 0, sizeof(kp));
     int traced = (sysctl(mib, 4, &kp, &sz, NULL, 0) == 0) ? ((kp.kp_proc.p_flag & P_TRACED) ? 1 : 0) : 0;
 
+    int cs_debugged = 0;
+    typedef int (*csops_fn)(pid_t pid, unsigned int ops, void *useraddr, size_t usersize);
+    static csops_fn s_csops = (csops_fn)dlsym(RTLD_DEFAULT, "csops");
+    if (s_csops != nullptr) {
+        uint32_t csflags = 0;
+        if (s_csops(pid, 0, &csflags, sizeof(csflags)) == 0) {
+            cs_debugged = (csflags & 0x10000000) ? 1 : 0;
+        }
+    }
+
     if (r_pid) {
         *r_pid = pid;
     }
     if (r_traced) {
         *r_traced = traced;
     }
+    if (r_cs_debugged) {
+        *r_cs_debugged = cs_debugged;
+    }
 
     if (sJitConfirmed) {
         return true;
     }
 
-    if (traced == 1) {
+    if (traced == 1 || cs_debugged == 1) {
         bool ok = sts2_run_jit_probe();
         setenv("STS2_MONO_JIT", "1", 1);
         sJitConfirmed = true;
-        NSLog(@"[STS2Launcher iOS] Debugger attached (P_TRACED=1, probe=%d); STS2_MONO_JIT=1 enabled", ok ? 1 : 0);
+        NSLog(@"[STS2Launcher iOS] Debugger attached (P_TRACED=%d, CS_DEBUGGED=%d, probe=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged, ok ? 1 : 0);
         return true;
     }
 
-    // Also check if RW->RX mprotect succeeds without P_TRACED (e.g., TrollStore / jailbreak entitlement)
-    static bool sCheckedUntracedMprotect = false;
-    if (!sCheckedUntracedMprotect) {
-        sCheckedUntracedMprotect = true;
-        size_t len = 16384;
-        void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-        if (p != MAP_FAILED) {
-            if (mprotect(p, len, PROT_READ | PROT_EXEC) == 0) {
-                munmap(p, len);
-                bool ok = sts2_run_jit_probe();
-                if (ok) {
-                    setenv("STS2_MONO_JIT", "1", 1);
-                    sJitConfirmed = true;
-                    return true;
-                }
-            } else {
-                munmap(p, len);
-            }
-        }
+    // Continuous probe: test if RW->RX mprotect execution succeeds (StikDebug or kernel-level JIT entitlement)
+    bool rxOk = sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
+    if (rxOk) {
+        setenv("STS2_MONO_JIT", "1", 1);
+        sJitConfirmed = true;
+        NSLog(@"[STS2Launcher iOS] JIT probe succeeded (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
+        return true;
     }
 
     return false;

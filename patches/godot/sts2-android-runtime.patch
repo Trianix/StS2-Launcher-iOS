@@ -20,7 +20,7 @@ index aed7eff..1232e8b 100644
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
 diff --git a/modules/mono/mono_gd/gd_mono.cpp b/modules/mono/mono_gd/gd_mono.cpp
-index 14dd433..eb35f98 100644
+index 14dd433..51edcc6 100644
 --- a/modules/mono/mono_gd/gd_mono.cpp
 +++ b/modules/mono/mono_gd/gd_mono.cpp
 @@ -55,7 +55,7 @@
@@ -67,7 +67,7 @@ index 14dd433..eb35f98 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -296,7 +310,244 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -296,7 +310,248 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  }
  
  #ifndef TOOLS_ENABLED
@@ -102,6 +102,10 @@ index 14dd433..eb35f98 100644
 +void mono_print_unhandled_exception(MonoObject *exc);
 +}
 +}
++using mono_native::MonoDomain;
++using mono_native::MonoClass;
++using mono_native::MonoMethod;
++using mono_native::MonoObject;
 +
 +static void *ios_open_dotnet_native_lib(const char *stem) {
 +	char path_buf[512];
@@ -312,7 +316,7 @@ index 14dd433..eb35f98 100644
  	String coreclr_path = find_coreclr();
  
  	bool is_monovm = false;
-@@ -331,7 +582,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+@@ -331,7 +586,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
  	ERR_FAIL_COND_V(err != OK, false);
  	coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
  
@@ -325,7 +329,7 @@ index 14dd433..eb35f98 100644
  	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
  	ERR_FAIL_COND_V(err != OK, false);
  	mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
-@@ -518,7 +773,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
+@@ -518,7 +777,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
  #endif
  
  #ifndef TOOLS_ENABLED
@@ -334,7 +338,7 @@ index 14dd433..eb35f98 100644
  MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
  	constexpr bool ref_only = false;
  
-@@ -538,6 +793,25 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
+@@ -538,6 +797,25 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
  	String path = GodotSharpDirs::get_api_assemblies_dir();
  	path = path.path_join(assembly_name);
  
@@ -360,7 +364,7 @@ index 14dd433..eb35f98 100644
  	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
  
  	if (!FileAccess::exists(path)) {
-@@ -577,28 +851,122 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -577,28 +855,122 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  
  	String assembly_name = Path::get_csharp_project_name();
  
@@ -408,7 +412,7 @@ index 14dd433..eb35f98 100644
 +	} else {
 +		print_line(".NET: STS2Mobile bootstrap delegate loaded");
 +	}
- 
++
 +#if defined(ANDROID_ENABLED)
 +	int sts2mobile_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
@@ -466,7 +470,7 @@ index 14dd433..eb35f98 100644
 +		}
 +	}
 +#endif
-+
+ 
 +#if defined(ANDROID_ENABLED)
 +	// On Android, creating the first delegate attaches this native engine thread in Mono's
 +	// GC-unsafe state. Transition to GC-safe so rendering doesn't block GC suspensions.
@@ -487,7 +491,7 @@ index 14dd433..eb35f98 100644
  	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
  
  	return godot_plugins_initialize;
-@@ -634,7 +1002,7 @@ static bool _on_core_api_assembly_loaded() {
+@@ -634,7 +1006,7 @@ static bool _on_core_api_assembly_loaded() {
  }
  
  void GDMono::initialize() {
@@ -496,7 +500,7 @@ index 14dd433..eb35f98 100644
  
  	_init_godot_api_hashes();
  
-@@ -681,7 +1049,7 @@ void GDMono::initialize() {
+@@ -681,7 +1053,7 @@ void GDMono::initialize() {
  
  	void *godot_dll_handle = nullptr;
  
@@ -505,7 +509,7 @@ index 14dd433..eb35f98 100644
  	// Managed code can access it on its own on other platforms
  	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
  #endif
-@@ -695,18 +1063,65 @@ void GDMono::initialize() {
+@@ -695,18 +1067,68 @@ void GDMono::initialize() {
  	ERR_FAIL_COND_MSG(!init_ok, ".NET: GodotPlugins initialization failed");
  
  	plugin_callbacks = plugin_callbacks_res;
@@ -513,6 +517,7 @@ index 14dd433..eb35f98 100644
 +	print_line(".NET: Invoking godot_plugins_initialize...");
 +#if defined(IOS_ENABLED)
 +	bool init_ok = false;
++	String assembly_name = Path::get_csharp_project_name();
 +	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
 +	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
 +	if (!is_launcher_bootstrap) {
@@ -535,8 +540,10 @@ index 14dd433..eb35f98 100644
 +
 +#if (defined(ANDROID_ENABLED) || defined(IOS_ENABLED)) && !defined(TOOLS_ENABLED)
 +	bool android_x86_64_runtime = OS::get_singleton()->has_feature("x86_64");
++#if !defined(IOS_ENABLED)
 +	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
 +	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
++#endif
 +	if (android_x86_64_runtime) {
 +		print_line(".NET: Skipping STS2Mobile Harmony bootstrap on x86_64; Harmony constructor crashes this Android Mono runtime.");
 +	} else {

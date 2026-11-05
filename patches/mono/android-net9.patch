@@ -448,13 +448,12 @@ index c74c5c1..596e1b0 100644
  		if (is_valid_family_access (access_klass, member_klass, context_klass))
  			return TRUE;
 diff --git a/src/mono/mono/utils/mono-mmap.c b/src/mono/mono/utils/mono-mmap.c
-index 09af6f8..a3152ef 100644
 --- a/src/mono/mono/utils/mono-mmap.c
 +++ b/src/mono/mono/utils/mono-mmap.c
-@@ -309,6 +309,27 @@ mono_valloc (void *addr, size_t length, int flags, MonoMemAccountType type)
+@@ -308,6 +308,28 @@
+ 
  	if (ptr == MAP_FAILED)
  		return NULL;
- 
 +#if defined(TARGET_IOS) && defined(HOST_ARM64)
 +	if (flags & (MONO_MMAP_EXEC | MONO_MMAP_JIT)) {
 +		static int s_has_txm = -1;
@@ -477,6 +476,6 @@ index 09af6f8..a3152ef 100644
 +		}
 +	}
 +#endif
-+
+ 
  	mono_account_mem (type, (ssize_t)length);
- 	return ptr;
+ 

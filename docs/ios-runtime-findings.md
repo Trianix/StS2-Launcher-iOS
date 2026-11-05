@@ -95,6 +95,41 @@ Deployment / Sideloading: SideStore / StikDebug (DDI auto-mounted via TSS servic
 
 ---
 
+### Issue F: Dynamic Heap Trampoline W^X Crash (`coreclr_create_delegate` & `sts2mobile_probe()`)
+- **Symptom:** App booted Godot, initialized Metal 3.1, initialized CoreCLR domain `domain_id=0`, loaded `STS2Mobile.dll`, and crashed immediately with `SIGSEGV` when invoking `sts2mobile_probe()` or any delegate returned by `coreclr_create_delegate`.
+- **Root Cause:**
+  - Even in Interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`), `coreclr_create_delegate` calls `mono_create_ftnptr` which generates dynamic machine-code stubs (`tramp-arm64.c`) on the heap (`mov x15, ...; mov x16, ...; br x16`).
+  - Without an attached debugger (`P_TRACED=0`), iOS kernel W^X forbids execution of heap memory pages. Jumping to the delegate function pointer triggered hardware `SIGSEGV` at `0x112d76c00`.
+- **Decision & Fix (Commit `6b1b506`):**
+  - Managed initializers on iOS must never be called through dynamic heap function pointer trampolines.
+  - Implemented `ios_invoke_godot_plugin_init` and `ios_invoke_sts2mobile_apply` using Mono's precompiled static embedding API `mono_runtime_invoke`.
+  - `mono_runtime_invoke` executes methods directly inside the interpreter loop (`interp.c`) within the pre-signed binary `__TEXT` segment with zero W^X violations.
+  - Scoped `sts2mobile_probe` and `sts2mobile_harmony_probe` to `ANDROID_ENABLED` only.
+  - Set `godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(1)` on iOS to satisfy engine null checks while routing actual invocation through `mono_runtime_invoke`.
+
+---
+
+### Issue G: StikDebug Wait Screen Auto-Start Race Condition
+- **Symptom:** The wait screen had an arbitrary 3.2-second timeout (`sPollCount >= 8`) that auto-started the engine in Interpreter mode before StikDebug could attach.
+- **Decision & Fix (Commit `c15fa1c`):**
+  - Removed the auto-start timeout from `sts2_pollJitStatus:`.
+  - Wait screen remains active displaying live PID, `P_TRACED`, and `CS_DEBUGGED` status.
+  - Automatically launches Godot in JIT mode as soon as StikDebug attaches (`sts2_ios_is_jit_ready` returns true).
+  - Provides a manual fallback button *"Start in Interpreter Mode (No JIT)"* if the user prefers to run without JIT.
+  - Rate-limited the diagnostic probe in `AppDelegate.mm` to prevent log flooding while waiting.
+
+---
+
+### Issue H: CI Build Speed Optimization (Mono/Godot Cache Segregation & ccache)
+- **Symptom:** Every patch tweak required an 18-minute rebuild in GitHub Actions because Mono and Godot were lumped into a single cache key.
+- **Decision & Fix (Commit `c15fa1c`):**
+  - Integrated `ccache` (`hendrikmuhs/ccache-action@v1.2`) with `c_compiler_launcher=ccache cpp_compiler_launcher=ccache` in SCons.
+  - Split native cache into `cache-mono-lib` (`ios/libs/libmonosgen-2.0.a`) and `cache-godot-lib` (`ios/libs/libgodot.ios.template_release.arm64.a`).
+  - The 3.5-minute Mono build is now restored in 1 second and completely skipped on Godot-only changes.
+  - Cached Godot static library enables incremental builds to finish in under 2 minutes.
+
+---
+
 ## 3. Verification & Diagnostic Commands
 
 - **Read Device App Output Log:**

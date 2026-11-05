@@ -194,6 +194,33 @@ Deployment / Sideloading: SideStore / StikDebug (DDI auto-mounted via TSS servic
 
 ---
 
+### Issue K: Reverse P/Invoke & Managed Callback Dynamic Heap Violation (`mono_arch_get_static_rgctx_trampoline`)
+- **Symptom:** After `STS2Mobile.GodotSharpBootstrap.Initialize` completed and `STS2Mobile.ModEntry.ApplyInternal` started initializing, the engine called `Godot.OS:GetDataDir` -> `CSharpLanguage::setup_csharp_script_binding` -> `ScriptManagerBridge_CreateManagedForGodotObjectBinding`. The app crashed with `SIGSEGV` (signal 11) at native instruction pointer `0x10ef5f450`.
+- **Instruction Disassembly at Fault (`0x10ef5f450`):**
+  ```arm64
+  0x10ef5f450: 0f 08 9d d2  ->  mov  x15, #...
+  0x10ef5f450: 2f 8b a9 f2  ->  movk x15, #..., lsl #16
+  0x10ef5f450: 2f 00 c0 f2  ->  movk x15, #..., lsl #32
+  0x10ef5f450: 10 61 9e d2  ->  mov  x16, #...
+  0x10ef5f450: b0 de a1 f2  ->  movk x16, #..., lsl #16
+  0x10ef5f450: 30 00 c0 f2  ->  movk x16, #..., lsl #32
+  0x10ef5f450: 00 02 1f d6  ->  br   x16
+  ```
+- **Root Cause:**
+  1. Methods marked with `[UnmanagedCallersOnly]` (such as GodotSharp's `ScriptManagerBridge.CreateManagedForGodotObjectBinding`) passed as native callbacks to C++ require function pointers.
+  2. In `mono/mini/mini-trampolines.c:183`, `mono_create_ftnptr_arg_trampoline` calls `mono_arch_get_static_rgctx_trampoline` to bind the method context (`MonoFtnDesc*`) into `MONO_ARCH_RGCTX_REG` (`x15`) before branching to `mono_native_to_interp_trampoline_arm64` (`x16`).
+  3. `mono_arch_get_static_rgctx_trampoline` allocated heap memory via `mono_mem_manager_code_reserve` and emitted the 32-byte stub above directly onto the heap.
+  4. When Godot C++ invoked the function pointer, executing this dynamic heap stub on iOS without JIT entitlements (`P_TRACED=0`) triggered TXM hardware `SIGSEGV`.
+- **Decision & Fix:**
+  1. Created static, code-signed `__TEXT`-resident pools in `src/mono/mono/mini/tramp-arm64.c`:
+     - **Static RGCTX Pool (`mono_rgctx_stubs`):** 2048 8-byte stubs (`mov x16, #idx; b mono_static_rgctx_common`) backed by `mono_static_rgctx_table` in `.bss`. Common handler loads `x15 = arg` and `x16 = addr` via PC-relative addressing (`adrp / add @PAGE / @PAGEOFF`) and branches via `br x16` without touching caller registers `x0..x8` or `d0..d7`.
+     - **Static Unbox Pool (`mono_unbox_stubs`):** 1024 8-byte stubs for unboxing value types (`add x0, x0, #16; br x16`).
+     - **Static Specific Pool (`mono_specific_stubs`):** 1024 8-byte stubs for specific generic trampolines (`mov x17, #idx; b mono_static_specific_common`).
+  2. Implemented thread-safe deduplication spinlocks so repeated queries for identical callback `(arg, addr)` tuples reuse the same static stub.
+  3. All dynamic machine code emission in Mono's ARM64 trampoline generator is now 100% replaced by static `__TEXT` segments.
+
+---
+
 ## 3. Verification & Diagnostic Commands
 
 - **Read Device App Output Log:**

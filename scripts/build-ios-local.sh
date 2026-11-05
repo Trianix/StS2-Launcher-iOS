@@ -62,7 +62,45 @@ echo "Staging clean iOS-specific .NET 9.0.7 BCL and native interop libraries..."
 rm -rf "$IOS_BUNDLE_BCL_DIR"/*
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/lib/net9.0/"*.dll "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/System.Private.CoreLib.dll" "$IOS_BUNDLE_BCL_DIR/"
-cp -f "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/libSystem."*.dylib "$IOS_FRAMEWORKS_DIR/"
+rm -f "$IOS_FRAMEWORKS_DIR/libSystem."*.dylib
+for dylib_path in "$IOS_RUNTIME_EXTRACT/runtimes/ios-arm64/native/libSystem."*.dylib; do
+    if [ -f "$dylib_path" ]; then
+        dylib_file="$(basename "$dylib_path")"
+        fw_name="${dylib_file%.dylib}"
+        fw_dir="$IOS_FRAMEWORKS_DIR/$fw_name.framework"
+        rm -rf "$fw_dir"
+        mkdir -p "$fw_dir"
+        cp -f "$dylib_path" "$fw_dir/$fw_name"
+        install_name_tool -id "@rpath/$fw_name.framework/$fw_name" "$fw_dir/$fw_name"
+        bundle_id_suffix="$(echo "$fw_name" | tr '_' '-')"
+        cat > "$fw_dir/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>$fw_name</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.trianix.sts2launcher.framework.$bundle_id_suffix</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$fw_name</string>
+	<key>CFBundlePackageType</key>
+	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>9.0.7</string>
+	<key>CFBundleVersion</key>
+	<string>9.0.7</string>
+	<key>DTPlatformName</key>
+	<string>iphoneos</string>
+	<key>MinimumOSVersion</key>
+	<string>15.0</string>
+</dict>
+</plist>
+EOF
+    fi
+done
 cp -f "$IOS_BCL_ASSETS_DIR/0Harmony.dll" "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_BCL_ASSETS_DIR/GodotSharp.dll" "$IOS_BUNDLE_BCL_DIR/"
 cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$IOS_BUNDLE_BCL_DIR/" 2>/dev/null || true
@@ -204,8 +242,7 @@ cp -R "$ASSEMBLIES_DIR/"* "$APP_DIR/assemblies/"
 mkdir -p "$APP_DIR/dotnet_bcl"
 cp -R "$IOS_BUNDLE_BCL_DIR/"* "$APP_DIR/dotnet_bcl/"
 mkdir -p "$APP_DIR/Frameworks"
-cp -f "$IOS_FRAMEWORKS_DIR/"*.dylib "$APP_DIR/Frameworks/"
-cp -f "$IOS_FRAMEWORKS_DIR/"*.dylib "$APP_DIR/"
+rm -f "$APP_DIR/Frameworks/"*.dylib "$APP_DIR/"*.dylib
 for fw in "$IOS_FRAMEWORKS_DIR/"*.framework; do
     if [ -d "$fw" ]; then
         rm -rf "$APP_DIR/Frameworks/$(basename "$fw")"

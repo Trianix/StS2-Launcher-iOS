@@ -1,13 +1,88 @@
 diff --git a/drivers/apple_embedded/app_delegate_service.mm b/drivers/apple_embedded/app_delegate_service.mm
-index 07b52b9..bb326e9 100644
+index 07b52b9..dc7ab04 100644
 --- a/drivers/apple_embedded/app_delegate_service.mm
 +++ b/drivers/apple_embedded/app_delegate_service.mm
-@@ -82,8 +82,19 @@ static GDTViewController *mainViewController = nil;
+@@ -48,6 +48,7 @@ extern char **gargv;
+ 
+ extern int apple_embedded_main(int, char **);
+ extern void apple_embedded_finish();
++extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced);
+ 
+ @implementation GDTAppDelegateService
+ 
+@@ -61,30 +62,75 @@ enum {
+ };
+ 
+ static GDTViewController *mainViewController = nil;
++static bool sGodotEngineStarted = false;
++static NSTimer *sJitPollTimer = nil;
++static UILabel *sJitStatusLabel = nil;
+ 
+ + (GDTViewController *)viewController {
+ 	return mainViewController;
+ }
+ 
+-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+-	// TODO: might be required to make an early return, so app wouldn't crash because of timeout.
+-	// TODO: logo screen is not displayed while shaders are compiling
+-	// DummyViewController(Splash/LoadingViewController) -> setup -> GodotViewController
++- (void)sts2_pollJitStatus:(NSTimer *)timer {
++	if (sGodotEngineStarted) {
++		[timer invalidate];
++		sJitPollTimer = nil;
++		return;
++	}
++	int pid = 0;
++	int traced = 0;
++	if (sts2_ios_is_jit_ready(&pid, &traced)) {
++		fprintf(stderr, "[Godot iOS] JIT ready detected (pid=%d, P_TRACED=%d)! Starting Godot engine...\n", pid, traced);
++		fflush(stderr);
++		[timer invalidate];
++		sJitPollTimer = nil;
++		[self sts2_startGodotEngine];
++	} else if (sJitStatusLabel != nil) {
++		sJitStatusLabel.text = [NSString stringWithFormat:
++			@"Slay the Spire 2 — iOS\n\n"
++			@"Waiting for StikDebug JIT...\n\n"
++			@"PID: %d  |  P_TRACED: %d\n\n"
++			@"1. Keep this app open in the background\n"
++			@"2. Open StikDebug and attach JIT to 'Slay the Spire 2'\n"
++			@"3. Return here — the launcher will start automatically.",
++			pid, traced];
++	}
++}
+ 
+-#if !defined(VISIONOS_ENABLED)
+-	// Create a full-screen window
+-	CGRect windowBounds = [[UIScreen mainScreen] bounds];
+-	self.window = [[UIWindow alloc] initWithFrame:windowBounds];
+-#else
+-	self.window = [[UIWindow alloc] init];
+-#endif
++- (void)sts2_forceStartWithoutJit:(id)sender {
++	fprintf(stderr, "[Godot iOS] User requested force start without JIT.\n");
++	fflush(stderr);
++	[self sts2_startGodotEngine];
++}
++
++- (void)sts2_startGodotEngine {
++	if (sGodotEngineStarted) {
++		return;
++	}
++	sGodotEngineStarted = true;
++	if (sJitPollTimer != nil) {
++		[sJitPollTimer invalidate];
++		sJitPollTimer = nil;
++	}
++	sJitStatusLabel = nil;
+ 
++	CGRect windowBounds = [[UIScreen mainScreen] bounds];
  	int err = apple_embedded_main(gargc, gargv);
  
  	if (err != 0) {
 -		// bail, things did not go very well for us, should probably output a message on screen with our error code...
 -		exit(0);
+-		return NO;
 +		fprintf(stderr, "[Godot] CRITICAL: apple_embedded_main failed with error code: %d\n", err);
 +		fflush(stderr);
 +
@@ -21,9 +96,181 @@ index 07b52b9..bb326e9 100644
 +		[diagVC.view addSubview:label];
 +		self.window.rootViewController = diagVC;
 +		[self.window makeKeyAndVisible];
- 		return NO;
++		return;
  	}
  
+ 	GDTViewController *viewController = [[GDTViewController alloc] init];
+@@ -130,11 +176,81 @@ static GDTViewController *mainViewController = nil;
+ 	}
+ 
+ 	[[AVAudioSession sharedInstance] setCategory:category withOptions:options error:nil];
++}
++
++- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
++	// TODO: might be required to make an early return, so app wouldn't crash because of timeout.
++	// TODO: logo screen is not displayed while shaders are compiling
++	// DummyViewController(Splash/LoadingViewController) -> setup -> GodotViewController
++
++#if !defined(VISIONOS_ENABLED)
++	// Create a full-screen window
++	CGRect windowBounds = [[UIScreen mainScreen] bounds];
++	self.window = [[UIWindow alloc] initWithFrame:windowBounds];
++#else
++	self.window = [[UIWindow alloc] init];
++#endif
++
++	int pid = 0;
++	int traced = 0;
++	const char *skipWait = getenv("STS2_SKIP_JIT_WAIT");
++	bool jitReady = sts2_ios_is_jit_ready(&pid, &traced);
++	if (jitReady || (skipWait != nullptr && strcmp(skipWait, "1") == 0)) {
++		fprintf(stderr, "[Godot iOS] JIT ready at launch (pid=%d, P_TRACED=%d). Starting Godot immediately.\n", pid, traced);
++		fflush(stderr);
++		[self sts2_startGodotEngine];
++		return YES;
++	}
++
++	fprintf(stderr, "[Godot iOS] JIT not yet attached at launch (pid=%d, P_TRACED=%d). Showing StikDebug wait screen...\n", pid, traced);
++	fflush(stderr);
++
++	UIViewController *waitVC = [[UIViewController alloc] init];
++	waitVC.view.backgroundColor = [UIColor colorWithRed:0.07f green:0.08f blue:0.12f alpha:1.0f];
++
++	UILabel *label = [[UILabel alloc] initWithFrame:CGRectInset(windowBounds, 28, 80)];
++	label.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
++	label.textColor = [UIColor colorWithRed:0.92f green:0.94f blue:0.98f alpha:1.0f];
++	label.numberOfLines = 0;
++	label.textAlignment = NSTextAlignmentCenter;
++	label.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightMedium];
++	label.text = [NSString stringWithFormat:
++		@"Slay the Spire 2 — iOS\n\n"
++		@"Waiting for StikDebug JIT...\n\n"
++		@"PID: %d  |  P_TRACED: %d\n\n"
++		@"1. Keep this app open in the background\n"
++		@"2. Open StikDebug and attach JIT to 'Slay the Spire 2'\n"
++		@"3. Return here — the launcher will start automatically.",
++		pid, traced];
++	[waitVC.view addSubview:label];
++	sJitStatusLabel = label;
++
++	UIButton *forceBtn = [UIButton buttonWithType:UIButtonTypeSystem];
++	forceBtn.frame = CGRectMake((windowBounds.size.width - 260) * 0.5f, windowBounds.size.height - 90, 260, 44);
++	forceBtn.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
++	[forceBtn setTitle:@"Force Start Without Waiting" forState:UIControlStateNormal];
++	[forceBtn setTitleColor:[UIColor colorWithRed:0.65f green:0.70f blue:0.80f alpha:1.0f] forState:UIControlStateNormal];
++	forceBtn.backgroundColor = [UIColor colorWithRed:0.15f green:0.18f blue:0.25f alpha:1.0f];
++	forceBtn.layer.cornerRadius = 8.0f;
++	[forceBtn addTarget:self action:@selector(sts2_forceStartWithoutJit:) forControlEvents:UIControlEventTouchUpInside];
++	[waitVC.view addSubview:forceBtn];
++
++	self.window.rootViewController = waitVC;
++	[self.window makeKeyAndVisible];
++
++	sJitPollTimer = [NSTimer scheduledTimerWithTimeInterval:0.4
++													 target:self
++												   selector:@selector(sts2_pollJitStatus:)
++												   userInfo:nil
++													repeats:YES];
+ 
+ 	return YES;
+ }
+ 
+ - (void)onAudioInterruption:(NSNotification *)notification {
++	if (!sGodotEngineStarted || !OS_AppleEmbedded::get_singleton()) {
++		return;
++	}
+ 	if ([notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
+ 		if ([[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] isEqualToNumber:[NSNumber numberWithInt:AVAudioSessionInterruptionTypeBegan]]) {
+ 			NSLog(@"Audio interruption began");
+@@ -147,13 +263,15 @@ static GDTViewController *mainViewController = nil;
+ }
+ 
+ - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
+-	if (OS::get_singleton()->get_main_loop()) {
++	if (sGodotEngineStarted && OS::get_singleton() && OS::get_singleton()->get_main_loop()) {
+ 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_OS_MEMORY_WARNING);
+ 	}
+ }
+ 
+ - (void)applicationWillTerminate:(UIApplication *)application {
+-	apple_embedded_finish();
++	if (sGodotEngineStarted && OS_AppleEmbedded::get_singleton()) {
++		apple_embedded_finish();
++	}
+ }
+ 
+ // When application goes to background (e.g. user switches to another app or presses Home),
+@@ -167,19 +285,37 @@ static GDTViewController *mainViewController = nil;
+ // notification panel by swiping from the upper part of the screen.
+ 
+ - (void)applicationWillResignActive:(UIApplication *)application {
+-	OS_AppleEmbedded::get_singleton()->on_focus_out();
++	if (sGodotEngineStarted && OS_AppleEmbedded::get_singleton()) {
++		OS_AppleEmbedded::get_singleton()->on_focus_out();
++	}
+ }
+ 
+ - (void)applicationDidBecomeActive:(UIApplication *)application {
+-	OS_AppleEmbedded::get_singleton()->on_focus_in();
++	if (!sGodotEngineStarted) {
++		int pid = 0;
++		int traced = 0;
++		if (sts2_ios_is_jit_ready(&pid, &traced)) {
++			fprintf(stderr, "[Godot iOS] JIT ready on applicationDidBecomeActive (pid=%d, P_TRACED=%d). Starting Godot...\n", pid, traced);
++			fflush(stderr);
++			[self sts2_startGodotEngine];
++		}
++		return;
++	}
++	if (OS_AppleEmbedded::get_singleton()) {
++		OS_AppleEmbedded::get_singleton()->on_focus_in();
++	}
+ }
+ 
+ - (void)applicationDidEnterBackground:(UIApplication *)application {
+-	OS_AppleEmbedded::get_singleton()->on_enter_background();
++	if (sGodotEngineStarted && OS_AppleEmbedded::get_singleton()) {
++		OS_AppleEmbedded::get_singleton()->on_enter_background();
++	}
+ }
+ 
+ - (void)applicationWillEnterForeground:(UIApplication *)application {
+-	OS_AppleEmbedded::get_singleton()->on_exit_background();
++	if (sGodotEngineStarted && OS_AppleEmbedded::get_singleton()) {
++		OS_AppleEmbedded::get_singleton()->on_exit_background();
++	}
+ }
+ 
+ - (void)dealloc {
+diff --git a/drivers/apple_embedded/godot_view_renderer.mm b/drivers/apple_embedded/godot_view_renderer.mm
+index 95a41e7..e447f7e 100644
+--- a/drivers/apple_embedded/godot_view_renderer.mm
++++ b/drivers/apple_embedded/godot_view_renderer.mm
+@@ -70,7 +70,11 @@
+ 
+ 	if (!self.hasStartedMain) {
+ 		self.hasStartedMain = YES;
++		fprintf(stderr, "[Godot iOS] GDTViewRenderer: calling OS_AppleEmbedded::start()...\n");
++		fflush(stderr);
+ 		OS_AppleEmbedded::get_singleton()->start();
++		fprintf(stderr, "[Godot iOS] GDTViewRenderer: OS_AppleEmbedded::start() returned.\n");
++		fflush(stderr);
+ 		return YES;
+ 	}
+ 
+@@ -82,7 +86,11 @@
+ - (void)setupProjectData {
+ 	self.hasFinishedProjectDataSetup = YES;
+ 
+-	Main::setup2();
++	fprintf(stderr, "[Godot iOS] GDTViewRenderer: calling Main::setup2()...\n");
++	fflush(stderr);
++	Error err = Main::setup2();
++	fprintf(stderr, "[Godot iOS] GDTViewRenderer: Main::setup2() returned %d.\n", (int)err);
++	fflush(stderr);
+ 
+ 	// this might be necessary before here
+ 	NSDictionary *dict = [[NSBundle mainBundle] infoDictionary];
 diff --git a/drivers/apple_embedded/os_apple_embedded.mm b/drivers/apple_embedded/os_apple_embedded.mm
 index 07d1f8a..bd35ce4 100644
 --- a/drivers/apple_embedded/os_apple_embedded.mm

@@ -1,5 +1,5 @@
 diff --git a/modules/mono/godotsharp_dirs.cpp b/modules/mono/godotsharp_dirs.cpp
-index aed7eff..fee7afa 100644
+index aed7eff..1232e8b 100644
 --- a/modules/mono/godotsharp_dirs.cpp
 +++ b/modules/mono/godotsharp_dirs.cpp
 @@ -169,9 +169,13 @@ private:
@@ -20,7 +20,7 @@ index aed7eff..fee7afa 100644
  		if (DirAccess::exists(packed_path)) {
  			// The dotnet publish data is packed in the pck/zip.
 diff --git a/modules/mono/mono_gd/gd_mono.cpp b/modules/mono/mono_gd/gd_mono.cpp
-index 14dd433..850fd5c 100644
+index 14dd433..40f45b1 100644
 --- a/modules/mono/mono_gd/gd_mono.cpp
 +++ b/modules/mono/mono_gd/gd_mono.cpp
 @@ -55,7 +55,7 @@
@@ -67,12 +67,14 @@ index 14dd433..850fd5c 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -297,6 +311,65 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -296,7 +310,144 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+ }
  
  #ifndef TOOLS_ENABLED
 +#if defined(IOS_ENABLED)
 +namespace mono_native {
 +extern "C" {
++typedef void *(*PInvokeOverrideFn)(const char *library_name, const char *entrypoint_name);
 +int CORECLR_DELEGATE_CALLTYPE coreclr_initialize(const char *exePath, const char *appDomainFriendlyName, int propertyCount, const char **propertyKeys, const char **propertyValues, void **hostHandle, unsigned int *domainId);
 +int CORECLR_DELEGATE_CALLTYPE coreclr_create_delegate(void *hostHandle, unsigned int domainId, const char *entryPointAssemblyName, const char *entryPointTypeName, const char *entryPointMethodName, void **delegate);
 +void *mono_threads_enter_gc_safe_region_unbalanced(void **stack_marker);
@@ -82,7 +84,72 @@ index 14dd433..850fd5c 100644
 +MonoImage *mono_image_open_from_data_with_name(char *data, uint32_t data_len, bool need_copy, MonoImageOpenStatus *status, bool refonly, const char *name);
 +MonoAssembly *mono_assembly_load_from_full(MonoImage *image, const char *fname, MonoImageOpenStatus *status, bool refonly);
 +void mono_jit_set_aot_mode(int mode);
++void mono_loader_install_pinvoke_override(PInvokeOverrideFn override_fn);
 +}
++}
++
++static void *ios_open_dotnet_native_lib(const char *stem) {
++	char path_buf[512];
++	snprintf(path_buf, sizeof(path_buf), "@rpath/%s.framework/%s", stem, stem);
++	void *handle = dlopen(path_buf, RTLD_LAZY | RTLD_GLOBAL);
++	if (handle) {
++		return handle;
++	}
++	snprintf(path_buf, sizeof(path_buf), "@executable_path/Frameworks/%s.framework/%s", stem, stem);
++	handle = dlopen(path_buf, RTLD_LAZY | RTLD_GLOBAL);
++	if (handle) {
++		return handle;
++	}
++	snprintf(path_buf, sizeof(path_buf), "@executable_path/%s.dylib", stem);
++	handle = dlopen(path_buf, RTLD_LAZY | RTLD_GLOBAL);
++	return handle;
++}
++
++static void *ios_pinvoke_override(const char *library_name, const char *entrypoint_name) {
++	if (library_name == nullptr || entrypoint_name == nullptr) {
++		return nullptr;
++	}
++
++	auto try_dlsym = [](void *handle, const char *symbol_name) -> void * {
++		if (!handle || !symbol_name) {
++			return nullptr;
++		}
++		void *sym = dlsym(handle, symbol_name);
++		if (!sym && symbol_name[0] != '_') {
++			char prefixed[256];
++			snprintf(prefixed, sizeof(prefixed), "_%s", symbol_name);
++			sym = dlsym(handle, prefixed);
++		}
++		return sym;
++	};
++
++	if (strcmp(library_name, "__Internal") == 0) {
++		return try_dlsym(RTLD_DEFAULT, entrypoint_name);
++	}
++
++	if (strstr(library_name, "System.Native") != nullptr) {
++		static void *s_sys_native = ios_open_dotnet_native_lib("libSystem.Native");
++		if (void *sym = try_dlsym(s_sys_native, entrypoint_name)) {
++			return sym;
++		}
++	} else if (strstr(library_name, "System.Globalization.Native") != nullptr) {
++		static void *s_glob_native = ios_open_dotnet_native_lib("libSystem.Globalization.Native");
++		if (void *sym = try_dlsym(s_glob_native, entrypoint_name)) {
++			return sym;
++		}
++	} else if (strstr(library_name, "System.IO.Compression.Native") != nullptr) {
++		static void *s_comp_native = ios_open_dotnet_native_lib("libSystem.IO.Compression.Native");
++		if (void *sym = try_dlsym(s_comp_native, entrypoint_name)) {
++			return sym;
++		}
++	} else if (strstr(library_name, "System.Security.Cryptography.Native.Apple") != nullptr) {
++		static void *s_crypto_native = ios_open_dotnet_native_lib("libSystem.Security.Cryptography.Native.Apple");
++		if (void *sym = try_dlsym(s_crypto_native, entrypoint_name)) {
++			return sym;
++		}
++	}
++
++	return try_dlsym(RTLD_DEFAULT, entrypoint_name);
 +}
 +#endif
  bool load_coreclr(void *&r_coreclr_dll_handle) {
@@ -119,13 +186,25 @@ index 14dd433..850fd5c 100644
 +	sym = dlsym(ios_lib, "mono_assembly_load_from_full");
 +	mono_assembly_load_from_full = sym ? (mono_assembly_load_from_full_fn)sym : (mono_assembly_load_from_full_fn)mono_native::mono_assembly_load_from_full;
 +
-+	// iOS 26 (TXM) refuses executable JIT memory even with a debugger attached, so run Mono in
-+	// interpreter-only mode unless STS2_MONO_JIT is set. 8 == MONO_AOT_MODE_INTERP_ONLY.
-+	if (getenv("STS2_MONO_JIT") == nullptr) {
-+		mono_native::mono_jit_set_aot_mode(8);
++	sym = dlsym(ios_lib, "mono_loader_install_pinvoke_override");
++	mono_native::PInvokeOverrideFn pinvoke_fn = &ios_pinvoke_override;
++	if (sym) {
++		typedef void (*install_pinvoke_fn)(mono_native::PInvokeOverrideFn);
++		((install_pinvoke_fn)sym)(pinvoke_fn);
++	} else {
++		mono_native::mono_loader_install_pinvoke_override(pinvoke_fn);
 +	}
 +
-+	print_verbose(String(".NET: iOS static Mono symbols bound. coreclr_initialize=") + (coreclr_initialize ? "OK" : "NULL") + ", coreclr_create_delegate=" + (coreclr_create_delegate ? "OK" : "NULL"));
++	const char *jit_env = getenv("STS2_MONO_JIT");
++	const char *force_interp = getenv("STS2_MONO_FORCE_INTERP");
++	if (force_interp != nullptr && strcmp(force_interp, "1") == 0) {
++		print_line(".NET: STS2_MONO_FORCE_INTERP=1 set; calling mono_jit_set_aot_mode(8)");
++		mono_native::mono_jit_set_aot_mode(8);
++	} else {
++		print_line(String(".NET: iOS Mono JIT mode active (STS2_MONO_JIT=") + (jit_env ? jit_env : "unset") + ")");
++	}
++
++	print_line(String(".NET: iOS static Mono symbols bound. coreclr_initialize=") + (coreclr_initialize ? "OK" : "NULL") + ", coreclr_create_delegate=" + (coreclr_create_delegate ? "OK" : "NULL"));
 +
 +	return (coreclr_initialize != nullptr && coreclr_create_delegate != nullptr);
 +	}
@@ -133,7 +212,7 @@ index 14dd433..850fd5c 100644
  	String coreclr_path = find_coreclr();
  
  	bool is_monovm = false;
-@@ -331,7 +404,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
+@@ -331,7 +482,11 @@ bool load_coreclr(void *&r_coreclr_dll_handle) {
  	ERR_FAIL_COND_V(err != OK, false);
  	coreclr_create_delegate = (coreclr_create_delegate_fn)symbol;
  
@@ -146,7 +225,7 @@ index 14dd433..850fd5c 100644
  	err = OS::get_singleton()->get_dynamic_library_symbol_handle(lib, "mono_install_assembly_preload_hook", symbol);
  	ERR_FAIL_COND_V(err != OK, false);
  	mono_install_assembly_preload_hook = (mono_install_assembly_preload_hook_fn)symbol;
-@@ -518,7 +595,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
+@@ -518,7 +673,7 @@ godot_plugins_initialize_fn try_load_native_aot_library(void *&r_aot_dll_handle)
  #endif
  
  #ifndef TOOLS_ENABLED
@@ -155,7 +234,7 @@ index 14dd433..850fd5c 100644
  MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p_assemblies_path, void *p_user_data) {
  	constexpr bool ref_only = false;
  
-@@ -538,6 +615,25 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
+@@ -538,6 +693,25 @@ MonoAssembly *load_assembly_from_pck(MonoAssemblyName *p_assembly_name, char **p
  	String path = GodotSharpDirs::get_api_assemblies_dir();
  	path = path.path_join(assembly_name);
  
@@ -181,7 +260,7 @@ index 14dd433..850fd5c 100644
  	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
  
  	if (!FileAccess::exists(path)) {
-@@ -577,8 +673,8 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -577,28 +751,114 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  
  	String assembly_name = Path::get_csharp_project_name();
  
@@ -192,10 +271,21 @@ index 14dd433..850fd5c 100644
  	// other platforms can find the assemblies with the default lookup.
  	if (mono_install_assembly_preload_hook != nullptr) {
  		mono_install_assembly_preload_hook(&load_assembly_from_pck, nullptr);
-@@ -601,6 +697,74 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
- 			(void **)&godot_plugins_initialize);
- 	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
+ 	}
+ #endif
  
++	print_line(".NET: Calling coreclr_initialize...");
+ 	void *coreclr_handle = nullptr;
+ 	unsigned int domain_id = 0;
+ 	int rc = coreclr_initialize(nullptr, nullptr, 0, nullptr, nullptr, &coreclr_handle, &domain_id);
+-	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to initialize CoreCLR.");
++	ERR_FAIL_COND_V_MSG(rc != 0, nullptr, ".NET: Failed to initialize CoreCLR (rc=" + itos(rc) + ").");
+ 
+ 	r_runtime_initialized = true;
+ 
+-	print_verbose(".NET: CoreCLR initialized");
++	print_line(".NET: CoreCLR initialized (domain_id=" + itos(domain_id) + ")");
++
 +#if defined(ANDROID_ENABLED) || defined(IOS_ENABLED)
 +	// Creating the first delegate attaches this native engine thread in Mono's
 +	// GC-unsafe state. Native rendering can then block on a shader mutex while a
@@ -205,7 +295,7 @@ index 14dd433..850fd5c 100644
 +	if (mono_enter_gc_safe_region != nullptr) {
 +		mono_enter_gc_safe_region(&native_stack_marker);
 +	}
-+	print_verbose(".NET: Mobile Mono host entered GC-safe native execution");
++	print_line(".NET: Mobile Mono host entered GC-safe native execution");
 +
 +	int sts2mobile_init_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
@@ -213,9 +303,9 @@ index 14dd433..850fd5c 100644
 +			"InitializeGodotSharp",
 +			(void **)&sts2mobile_initialize);
 +	if (sts2mobile_init_rc != 0 || sts2mobile_initialize == nullptr) {
-+		print_verbose(".NET: STS2Mobile GodotSharp initializer not available (rc=" + itos(sts2mobile_init_rc) + ")");
++		print_line(".NET: STS2Mobile GodotSharp initializer not available (rc=" + itos(sts2mobile_init_rc) + ")");
 +	} else {
-+		print_verbose(".NET: STS2Mobile GodotSharp initializer loaded");
++		print_line(".NET: STS2Mobile GodotSharp initializer loaded");
 +	}
 +
 +	int sts2mobile_rc = coreclr_create_delegate(coreclr_handle, domain_id,
@@ -224,9 +314,9 @@ index 14dd433..850fd5c 100644
 +			"Apply",
 +			(void **)&sts2mobile_apply);
 +	if (sts2mobile_rc != 0 || sts2mobile_apply == nullptr) {
-+		print_verbose(".NET: STS2Mobile bootstrap delegate not available (rc=" + itos(sts2mobile_rc) + ")");
++		print_line(".NET: STS2Mobile bootstrap delegate not available (rc=" + itos(sts2mobile_rc) + ")");
 +	} else {
-+		print_verbose(".NET: STS2Mobile bootstrap delegate loaded");
++		print_line(".NET: STS2Mobile bootstrap delegate loaded");
 +	}
 +
 +	int sts2mobile_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
@@ -235,9 +325,9 @@ index 14dd433..850fd5c 100644
 +			"BootstrapProbe",
 +			(void **)&sts2mobile_probe);
 +	if (sts2mobile_probe_rc != 0 || sts2mobile_probe == nullptr) {
-+		print_verbose(".NET: STS2Mobile bootstrap probe delegate not available (rc=" + itos(sts2mobile_probe_rc) + ")");
++		print_line(".NET: STS2Mobile bootstrap probe delegate not available (rc=" + itos(sts2mobile_probe_rc) + ")");
 +	} else {
-+		print_verbose(".NET: STS2Mobile bootstrap probe returned " + itos(sts2mobile_probe()));
++		print_line(".NET: STS2Mobile bootstrap probe returned " + itos(sts2mobile_probe()));
 +	}
 +
 +	int sts2mobile_harmony_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
@@ -246,9 +336,9 @@ index 14dd433..850fd5c 100644
 +			"HarmonyConstructorProbe",
 +			(void **)&sts2mobile_harmony_probe);
 +	if (sts2mobile_harmony_probe_rc != 0 || sts2mobile_harmony_probe == nullptr) {
-+		print_verbose(".NET: STS2Mobile Harmony constructor probe delegate not available (rc=" + itos(sts2mobile_harmony_probe_rc) + ")");
++		print_line(".NET: STS2Mobile Harmony constructor probe delegate not available (rc=" + itos(sts2mobile_harmony_probe_rc) + ")");
 +	} else {
-+		print_verbose(".NET: STS2Mobile Harmony constructor probe delegate loaded");
++		print_line(".NET: STS2Mobile Harmony constructor probe delegate loaded");
 +	}
 +
 +	int sts2mobile_show_launcher_rc = coreclr_create_delegate(coreclr_handle, domain_id,
@@ -257,46 +347,99 @@ index 14dd433..850fd5c 100644
 +			"ShowLauncherOnly",
 +			(void **)&sts2mobile_show_launcher);
 +	if (sts2mobile_show_launcher_rc != 0 || sts2mobile_show_launcher == nullptr) {
-+		print_verbose(".NET: STS2Mobile launcher-only delegate not available (rc=" + itos(sts2mobile_show_launcher_rc) + ")");
++		print_line(".NET: STS2Mobile launcher-only delegate not available (rc=" + itos(sts2mobile_show_launcher_rc) + ")");
 +	} else {
-+		print_verbose(".NET: STS2Mobile launcher-only delegate loaded");
++		print_line(".NET: STS2Mobile launcher-only delegate loaded");
 +	}
-+
+ 
++	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
++	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
++	if (is_launcher_bootstrap && sts2mobile_initialize != nullptr) {
++		print_line(".NET: STS2_LAUNCHER_BOOTSTRAP=1; using STS2Mobile.ModEntry.InitializeGodotSharp");
++		godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(sts2mobile_initialize);
++	} else {
++		int game_init_rc = coreclr_create_delegate(coreclr_handle, domain_id,
++				assembly_name.utf8().get_data(),
++				"GodotPlugins.Game.Main",
++				"InitializeFromGameProject",
++				(void **)&godot_plugins_initialize);
++		if ((game_init_rc != 0 || godot_plugins_initialize == nullptr) && sts2mobile_initialize != nullptr) {
++			print_line(".NET: Game assembly '" + assembly_name + "' initializer not found (rc=" + itos(game_init_rc) + "); falling back to STS2Mobile.ModEntry.InitializeGodotSharp");
++			godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(sts2mobile_initialize);
++		}
++	}
++#else
+ 	coreclr_create_delegate(coreclr_handle, domain_id,
+ 			assembly_name.utf8().get_data(),
+ 			"GodotPlugins.Game.Main",
+ 			"InitializeFromGameProject",
+ 			(void **)&godot_plugins_initialize);
 +#endif
 +
+ 	ERR_FAIL_NULL_V_MSG(godot_plugins_initialize, nullptr, ".NET: Failed to get GodotPlugins initialization function pointer");
+ 
  	return godot_plugins_initialize;
+@@ -634,7 +894,7 @@ static bool _on_core_api_assembly_loaded() {
  }
+ 
+ void GDMono::initialize() {
+-	print_verbose(".NET: Initializing module...");
++	print_line(".NET: Initializing module...");
+ 
+ 	_init_godot_api_hashes();
+ 
+@@ -681,7 +941,7 @@ void GDMono::initialize() {
+ 
+ 	void *godot_dll_handle = nullptr;
+ 
+-#if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED) && !defined(APPLE_EMBEDDED_ENABLED)
++#if defined(UNIX_ENABLED) && !defined(MACOS_ENABLED)
+ 	// Managed code can access it on its own on other platforms
+ 	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
  #endif
-@@ -705,8 +869,35 @@ void GDMono::initialize() {
+@@ -696,6 +956,7 @@ void GDMono::initialize() {
  
- 	print_verbose(".NET: GodotPlugins initialized");
+ 	plugin_callbacks = plugin_callbacks_res;
+ #else
++	print_line(".NET: Invoking godot_plugins_initialize...");
+ 	bool init_ok = godot_plugins_initialize(godot_dll_handle, &managed_callbacks,
+ 			interop_funcs, interop_funcs_size);
+ 	ERR_FAIL_COND_MSG(!init_ok, ".NET: GodotPlugins initialization failed");
+@@ -703,10 +964,39 @@ void GDMono::initialize() {
  
+ 	GDMonoCache::update_godot_api_cache(managed_callbacks);
+ 
+-	print_verbose(".NET: GodotPlugins initialized");
++	print_line(".NET: GodotPlugins initialized");
++
 +#if (defined(ANDROID_ENABLED) || defined(IOS_ENABLED)) && !defined(TOOLS_ENABLED)
 +	bool android_x86_64_runtime = OS::get_singleton()->has_feature("x86_64");
++	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
++	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
 +	if (android_x86_64_runtime) {
-+		print_verbose(".NET: Skipping STS2Mobile Harmony bootstrap on x86_64; Harmony constructor crashes this Android Mono runtime.");
++		print_line(".NET: Skipping STS2Mobile Harmony bootstrap on x86_64; Harmony constructor crashes this Android Mono runtime.");
 +	} else {
-+		if (sts2mobile_harmony_probe != nullptr) {
-+			print_verbose(".NET: Running STS2Mobile Harmony constructor probe");
++		if (!is_launcher_bootstrap && sts2mobile_harmony_probe != nullptr) {
++			print_line(".NET: Running STS2Mobile Harmony constructor probe");
 +			int sts2mobile_harmony_probe_result = sts2mobile_harmony_probe();
-+			print_verbose(".NET: STS2Mobile Harmony constructor probe returned " + itos(sts2mobile_harmony_probe_result));
++			print_line(".NET: STS2Mobile Harmony constructor probe returned " + itos(sts2mobile_harmony_probe_result));
 +		}
 +
 +		if (sts2mobile_apply != nullptr) {
-+			print_verbose(".NET: Applying STS2Mobile bootstrap patches");
++			print_line(".NET: Applying STS2Mobile bootstrap patches");
 +			sts2mobile_apply();
-+			print_verbose(".NET: STS2Mobile bootstrap patches returned");
++			print_line(".NET: STS2Mobile bootstrap patches returned");
 +		}
 +	}
 +#endif
-+
+ 
  	_on_core_api_assembly_loaded();
  
 +#if (defined(ANDROID_ENABLED) || defined(IOS_ENABLED)) && !defined(TOOLS_ENABLED)
 +	if (android_x86_64_runtime && sts2mobile_show_launcher != nullptr) {
-+		print_verbose(".NET: Scheduling STS2Mobile launcher-only UI on x86_64");
++		print_line(".NET: Scheduling STS2Mobile launcher-only UI on x86_64");
 +		int sts2mobile_show_launcher_result = sts2mobile_show_launcher();
-+		print_verbose(".NET: STS2Mobile launcher-only UI returned " + itos(sts2mobile_show_launcher_result));
++		print_line(".NET: STS2Mobile launcher-only UI returned " + itos(sts2mobile_show_launcher_result));
 +	}
 +#endif
 +

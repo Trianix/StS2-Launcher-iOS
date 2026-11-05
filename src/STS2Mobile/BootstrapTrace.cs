@@ -23,15 +23,28 @@ internal static class BootstrapTrace
             return;
 
         var line = FormatLine(message);
-        var androidFailure = TryWriteAndroidLog(message);
-        if (androidFailure != null)
-            TryAppendTraceFile(FormatLine($"Bootstrap trace Android log sink failed: {androidFailure.Message}"));
+        if (OperatingSystem.IsIOS())
+        {
+            try
+            {
+                Console.Error.WriteLine($"[STS2Mobile] {message}");
+            }
+            catch
+            {
+            }
+        }
+        else if (OperatingSystem.IsAndroid())
+        {
+            var androidFailure = TryWriteAndroidLog(message);
+            if (androidFailure != null)
+                TryAppendTraceFile(FormatLine($"Bootstrap trace Android log sink failed: {androidFailure.Message}"));
+        }
 
         if (!ShouldAppendTraceFile())
             return;
 
         var fileFailure = TryAppendTraceFile(line);
-        if (fileFailure != null)
+        if (fileFailure != null && OperatingSystem.IsAndroid())
             TryWriteAndroidLog($"Bootstrap trace file sink failed: {fileFailure.Message}");
     }
 
@@ -160,6 +173,9 @@ internal static class BootstrapTrace
 
     private static Exception TryWriteAndroidLog(string message)
     {
+        if (!OperatingSystem.IsAndroid())
+            return null;
+
         try
         {
             __android_log_write(AndroidLogInfoPriority, AndroidLogTag, message);

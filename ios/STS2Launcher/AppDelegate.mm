@@ -51,11 +51,86 @@ uint32_t* load_all_fmod_plugins(void* p_interface, uint32_t* r_count) {
 #include <sys/sysctl.h>
 #include <sys/types.h>
 #include <sys/proc.h>
+#include <sys/ucontext.h>
+#include <execinfo.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <dlfcn.h>
 #include <unistd.h>
+
+static void sts2_crash_signal_handler(int sig, siginfo_t *info, void *uap) {
+    signal(sig, SIG_DFL);
+
+    fprintf(stderr, "\n========================================\n");
+    fprintf(stderr, "[CRASH] Caught fatal signal %d (%s), si_code=%d, fault_addr=%p\n",
+            sig, strsignal(sig), info ? info->si_code : 0, info ? info->si_addr : nullptr);
+
+#if defined(__aarch64__)
+    if (uap != nullptr) {
+        ucontext_t *uc = (ucontext_t *)uap;
+        if (uc->uc_mcontext != nullptr) {
+            uint64_t pc = uc->uc_mcontext->__ss.__pc;
+            uint64_t lr = uc->uc_mcontext->__ss.__lr;
+            uint64_t fp = uc->uc_mcontext->__ss.__fp;
+            uint64_t sp = uc->uc_mcontext->__ss.__sp;
+            fprintf(stderr, "[CRASH] ARM64 Registers: pc=0x%llx lr=0x%llx fp=0x%llx sp=0x%llx\n",
+                    (unsigned long long)pc, (unsigned long long)lr,
+                    (unsigned long long)fp, (unsigned long long)sp);
+
+            Dl_info dl_pc{}, dl_lr{};
+            if (dladdr((void *)pc, &dl_pc) && dl_pc.dli_fname) {
+                fprintf(stderr, "[CRASH] PC in %s (%s + 0x%llx)\n",
+                        dl_pc.dli_fname,
+                        dl_pc.dli_sname ? dl_pc.dli_sname : "<unknown>",
+                        (unsigned long long)(pc - (uintptr_t)(dl_pc.dli_saddr ? dl_pc.dli_saddr : dl_pc.dli_fbase)));
+            }
+            if (dladdr((void *)lr, &dl_lr) && dl_lr.dli_fname) {
+                fprintf(stderr, "[CRASH] LR in %s (%s + 0x%llx)\n",
+                        dl_lr.dli_fname,
+                        dl_lr.dli_sname ? dl_lr.dli_sname : "<unknown>",
+                        (unsigned long long)(lr - (uintptr_t)(dl_lr.dli_saddr ? dl_lr.dli_saddr : dl_lr.dli_fbase)));
+            }
+        }
+    }
+#endif
+
+    void *frames[64];
+    int count = backtrace(frames, 64);
+    fprintf(stderr, "[CRASH] Backtrace (%d frames):\n", count);
+    for (int i = 0; i < count; i++) {
+        Dl_info dl{};
+        if (dladdr(frames[i], &dl) && dl.dli_fname) {
+            uintptr_t base = (uintptr_t)(dl.dli_saddr ? dl.dli_saddr : dl.dli_fbase);
+            fprintf(stderr, "  #%02d %p %s`%s + 0x%lx\n",
+                    i, frames[i], dl.dli_fname,
+                    dl.dli_sname ? dl.dli_sname : "<unknown>",
+                    (unsigned long)((uintptr_t)frames[i] - base));
+        } else {
+            fprintf(stderr, "  #%02d %p\n", i, frames[i]);
+        }
+    }
+    fprintf(stderr, "========================================\n");
+    fflush(stderr);
+    fflush(stdout);
+    fsync(STDERR_FILENO);
+    raise(sig);
+}
+
+static void sts2_install_crash_handlers() {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = sts2_crash_signal_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+
+    sigaction(SIGSEGV, &sa, nullptr);
+    sigaction(SIGABRT, &sa, nullptr);
+    sigaction(SIGBUS, &sa, nullptr);
+    sigaction(SIGILL, &sa, nullptr);
+    sigaction(SIGFPE, &sa, nullptr);
+    sigaction(SIGTRAP, &sa, nullptr);
+}
 
 static sigjmp_buf sJitProbeJmp;
 static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
@@ -119,7 +194,60 @@ static bool sts2_run_jit_probe() {
     bool anyJitOk = rwxOk || rxOk || mapJitOk;
     printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d)\n",
            anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk);
+    fflush(stdout);
     return anyJitOk;
+}
+
+extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced) {
+    static bool sJitConfirmed = false;
+    int pid = (int)getpid();
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
+    struct kinfo_proc kp;
+    size_t sz = sizeof(kp);
+    memset(&kp, 0, sizeof(kp));
+    int traced = (sysctl(mib, 4, &kp, &sz, NULL, 0) == 0) ? ((kp.kp_proc.p_flag & P_TRACED) ? 1 : 0) : 0;
+
+    if (r_pid) {
+        *r_pid = pid;
+    }
+    if (r_traced) {
+        *r_traced = traced;
+    }
+
+    if (sJitConfirmed) {
+        return true;
+    }
+
+    if (traced == 1) {
+        bool ok = sts2_run_jit_probe();
+        setenv("STS2_MONO_JIT", "1", 1);
+        sJitConfirmed = true;
+        NSLog(@"[STS2Launcher iOS] Debugger attached (P_TRACED=1, probe=%d); STS2_MONO_JIT=1 enabled", ok ? 1 : 0);
+        return true;
+    }
+
+    // Also check if RW->RX mprotect succeeds without P_TRACED (e.g., TrollStore / jailbreak entitlement)
+    static bool sCheckedUntracedMprotect = false;
+    if (!sCheckedUntracedMprotect) {
+        sCheckedUntracedMprotect = true;
+        size_t len = 16384;
+        void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (p != MAP_FAILED) {
+            if (mprotect(p, len, PROT_READ | PROT_EXEC) == 0) {
+                munmap(p, len);
+                bool ok = sts2_run_jit_probe();
+                if (ok) {
+                    setenv("STS2_MONO_JIT", "1", 1);
+                    sJitConfirmed = true;
+                    return true;
+                }
+            } else {
+                munmap(p, len);
+            }
+        }
+    }
+
+    return false;
 }
 
 static NSArray *sActiveGodotCmdline = nil;
@@ -146,7 +274,7 @@ static NSArray *sts2_determine_active_godot_cmdline() {
                     setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
                     setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
                     setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
-                    sActiveGodotCmdline = @[ @"--main-pack", pckPath ];
+                    sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
                     return;
                 } else {
                     NSLog(@"[STS2Launcher iOS] Pending launch PCK missing or invalid: %@; falling back to launcher", pckPath);
@@ -174,7 +302,7 @@ static NSArray *sts2_determine_active_godot_cmdline() {
         
         setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 1);
         setenv("STS2_AUTO_LAUNCH_GAME", "0", 1);
-        sActiveGodotCmdline = @[ @"--main-pack", bootstrapPath ];
+        sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", bootstrapPath ];
     });
     return sActiveGodotCmdline;
 }
@@ -225,12 +353,14 @@ static AppDelegate *sSharedDelegate = nil;
     NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (docPaths.count > 0) {
         NSString *logPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output.log"];
-        freopen([logPath UTF8String], "a+", stdout);
+        freopen([logPath UTF8String], "w+", stdout);
         freopen([logPath UTF8String], "a+", stderr);
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
     }
-    NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
+    sts2_install_crash_handlers();
+    setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 0);
+    NSLog(@"[STS2Launcher iOS] Logging & crash signal handlers initialized (PID=%d); stdout/stderr -> Documents/app_output.log", getpid());
 
     // 2. Change current working directory to bundle root so relative resource lookups succeed
     NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
@@ -255,7 +385,7 @@ static AppDelegate *sSharedDelegate = nil;
     // 4. Evaluate active cmdline and set environment variables immediately
     sts2_determine_active_godot_cmdline();
 
-    // 5. Initialize shared delegate and execute JIT / audio session configuration immediately in +load
+    // 5. Initialize shared delegate and configure audio session in +load (JIT is checked in GDTAppDelegateService)
     sSharedDelegate = [[AppDelegate alloc] init];
     [sSharedDelegate ensureJitAndAudioConfigured];
 }
@@ -263,17 +393,8 @@ static AppDelegate *sSharedDelegate = nil;
 - (void)ensureJitAndAudioConfigured {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSLog(@"[STS2Launcher iOS] Configuring JIT and audio session before engine launch...");
+        NSLog(@"[STS2Launcher iOS] Configuring audio session before engine launch...");
         setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 0);
-
-        bool jitAvailable = sts2_run_jit_probe();
-        if (jitAvailable) {
-            NSLog(@"[STS2Launcher iOS] JIT is active; configuring Mono for full JIT execution");
-            setenv("STS2_MONO_JIT", "1", 1);
-        } else {
-            NSLog(@"[STS2Launcher iOS] JIT is unavailable; falling back to Mono interpreter mode");
-            unsetenv("STS2_MONO_JIT");
-        }
         
         // Configure audio session for FMOD / game audio
         NSError *audioError = nil;

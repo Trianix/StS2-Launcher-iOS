@@ -26,8 +26,9 @@ public static partial class ModEntry
             );
             return 1;
         }
-        catch
+        catch (Exception ex)
         {
+            BootstrapTrace.Log($"InitializeGodotSharp failed: {ex}");
             return 0;
         }
     }
@@ -35,7 +36,14 @@ public static partial class ModEntry
     [UnmanagedCallersOnly]
     public static void Apply()
     {
-        ApplyInternal();
+        try
+        {
+            ApplyInternal();
+        }
+        catch (Exception ex)
+        {
+            BootstrapTrace.Log($"Unhandled exception in ModEntry.Apply: {ex}");
+        }
     }
 
     [UnmanagedCallersOnly]
@@ -64,8 +72,16 @@ public static partial class ModEntry
     [UnmanagedCallersOnly]
     public static int HarmonyConstructorProbe()
     {
-        _ = new Harmony(HarmonyId);
-        return HarmonyConstructorProbeCode;
+        try
+        {
+            _ = new Harmony(HarmonyId);
+            return HarmonyConstructorProbeCode;
+        }
+        catch (Exception ex)
+        {
+            BootstrapTrace.Log($"HarmonyConstructorProbe failed: {ex}");
+            return ProbeFailure;
+        }
     }
 
     [UnmanagedCallersOnly]
@@ -76,8 +92,9 @@ public static partial class ModEntry
             ScheduleStandaloneLauncher();
             return ProbeSuccessWithValue;
         }
-        catch
+        catch (Exception ex)
         {
+            BootstrapTrace.Log($"ShowLauncherOnly failed: {ex}");
             return ProbeSuccess;
         }
     }

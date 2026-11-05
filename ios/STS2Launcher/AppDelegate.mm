@@ -156,10 +156,25 @@ static NSArray *sts2_determine_active_godot_cmdline() {
             }
         }
         
-        NSLog(@"[STS2Launcher iOS] Bootstrapping launcher UI (bootstrap.pck)");
+        NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+        NSString *bootstrapPath = [[NSBundle mainBundle] pathForResource:@"bootstrap" ofType:@"pck"];
+        if (!bootstrapPath || ![fm fileExistsAtPath:bootstrapPath]) {
+            bootstrapPath = [bundlePath stringByAppendingPathComponent:@"bootstrap.pck"];
+        }
+        if (!bootstrapPath || ![fm fileExistsAtPath:bootstrapPath]) {
+            bootstrapPath = [bundlePath stringByAppendingPathComponent:@"STS2Launcher.pck"];
+        }
+        
+        BOOL exists = [fm fileExistsAtPath:bootstrapPath];
+        unsigned long long fileSize = 0;
+        if (exists) {
+            fileSize = [[fm attributesOfItemAtPath:bootstrapPath error:nil] fileSize];
+        }
+        NSLog(@"[STS2Launcher iOS] Bootstrapping launcher UI: %@ (exists=%d, size=%llu bytes)", bootstrapPath, exists, fileSize);
+        
         setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 1);
         setenv("STS2_AUTO_LAUNCH_GAME", "0", 1);
-        sActiveGodotCmdline = @[ @"--main-pack", @"bootstrap.pck" ];
+        sActiveGodotCmdline = @[ @"--main-pack", bootstrapPath ];
     });
     return sActiveGodotCmdline;
 }
@@ -175,6 +190,9 @@ static NSArray *sts2_determine_active_godot_cmdline() {
         return original;
     }
     NSMutableDictionary *modified = [original mutableCopy];
+    if (!modified) {
+        modified = [NSMutableDictionary dictionary];
+    }
     NSArray *cmdline = sts2_determine_active_godot_cmdline();
     if (cmdline) {
         modified[@"godot_cmdline"] = cmdline;
@@ -214,6 +232,13 @@ static AppDelegate *sSharedDelegate = nil;
     }
     NSLog(@"[STS2Launcher iOS] Logging initialized; stdout/stderr redirected to Documents/app_output.log");
 
+    // Change current working directory to bundle root so relative resource lookups succeed
+    NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+    if (bundlePath) {
+        chdir([bundlePath UTF8String]);
+        NSLog(@"[STS2Launcher iOS] Changed working directory to bundle: %@", bundlePath);
+    }
+
     // Swizzle NSBundle to inject dynamic godot_cmdline (--main-pack)
     Method origInfo = class_getInstanceMethod([NSBundle class], @selector(infoDictionary));
     Method swizInfo = class_getInstanceMethod([NSBundle class], @selector(sts2_infoDictionary));
@@ -231,43 +256,67 @@ static AppDelegate *sSharedDelegate = nil;
     sts2_determine_active_godot_cmdline();
 
     sSharedDelegate = [[AppDelegate alloc] init];
-    // Register as a Godot application delegate service so we receive lifecycle callbacks
+    // Register as a Godot application delegate service, prepending so our delegate callbacks fire BEFORE GDTAppDelegateService
     Class gdtClass = NSClassFromString(@"GDTApplicationDelegate");
-    if (gdtClass && [gdtClass respondsToSelector:@selector(addService:)]) {
-        [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
-        NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
+    if (gdtClass) {
+        if ([gdtClass respondsToSelector:@selector(services)]) {
+            NSMutableArray *services = (NSMutableArray *)[gdtClass performSelector:@selector(services)];
+            if ([services isKindOfClass:[NSMutableArray class]]) {
+                [services insertObject:sSharedDelegate atIndex:0];
+                NSLog(@"[STS2Launcher iOS] Pre-pended AppDelegate to GDTApplicationDelegate services (count=%lu)", (unsigned long)services.count);
+            } else if ([gdtClass respondsToSelector:@selector(addService:)]) {
+                [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
+                NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
+            }
+        } else if ([gdtClass respondsToSelector:@selector(addService:)]) {
+            [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
+            NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
+        }
     }
+}
+
+- (void)ensureJitAndAudioConfigured {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSLog(@"[STS2Launcher iOS] Configuring JIT and audio session before engine launch...");
+        setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 0);
+
+        bool jitAvailable = sts2_run_jit_probe();
+        if (jitAvailable) {
+            NSLog(@"[STS2Launcher iOS] JIT is active; configuring Mono for full JIT execution");
+            setenv("STS2_MONO_JIT", "1", 1);
+        } else {
+            NSLog(@"[STS2Launcher iOS] JIT is unavailable; falling back to Mono interpreter mode");
+            unsetenv("STS2_MONO_JIT");
+        }
+        
+        // Configure audio session for FMOD / game audio
+        NSError *audioError = nil;
+        AVAudioSession *audioSession = [AVAudioSession sharedInstance];
+        [audioSession setCategory:AVAudioSessionCategoryPlayback
+                      withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                            error:&audioError];
+        if (audioError) {
+            NSLog(@"[STS2Launcher iOS] Warning: Failed to set audio session category: %@", audioError);
+        }
+        [audioSession setActive:YES error:nil];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleAudioSessionInterruption:)
+                                                     name:AVAudioSessionInterruptionNotification
+                                                   object:audioSession];
+    });
+}
+
+- (BOOL)application:(UIApplication *)application willFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    NSLog(@"[STS2Launcher iOS] Application willFinishLaunchingWithOptions");
+    [self ensureJitAndAudioConfigured];
+    return YES;
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     NSLog(@"[STS2Launcher iOS] Application didFinishLaunchingWithOptions");
-    setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 0);
-
-    bool jitAvailable = sts2_run_jit_probe();
-    if (jitAvailable) {
-        NSLog(@"[STS2Launcher iOS] JIT is active; configuring Mono for full JIT execution");
-        setenv("STS2_MONO_JIT", "1", 1);
-    } else {
-        NSLog(@"[STS2Launcher iOS] JIT is unavailable; falling back to Mono interpreter mode");
-        unsetenv("STS2_MONO_JIT");
-    }
-    
-    // Configure audio session for FMOD / game audio
-    NSError *audioError = nil;
-    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
-    [audioSession setCategory:AVAudioSessionCategoryPlayback
-                  withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                        error:&audioError];
-    if (audioError) {
-        NSLog(@"[STS2Launcher iOS] Warning: Failed to set audio session category: %@", audioError);
-    }
-    [audioSession setActive:YES error:nil];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handleAudioSessionInterruption:)
-                                                 name:AVAudioSessionInterruptionNotification
-                                               object:audioSession];
-    
+    [self ensureJitAndAudioConfigured];
     return YES;
 }
 

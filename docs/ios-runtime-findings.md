@@ -130,6 +130,32 @@ Deployment / Sideloading: SideStore / StikDebug (DDI auto-mounted via TSS servic
 
 ---
 
+### Issue I: Black Screen Hang & CADisplayLink Rendering Kickoff
+- **Symptom:** App displayed StikDebug wait screen, but when tapping *"Start in Interpreter Mode (No JIT)"*, the screen hung black. Terminating or switching apps caused Godot to fail with `ERROR: Condition "!_start_success" is true at: cleanup (main/main.cpp:4950)`.
+- **Root Cause:**
+  1. Godot's iOS rendering loop is driven by `CADisplayLink`, activated by `[GDTView startRendering]` inside `OS_AppleEmbedded::on_focus_in()`.
+  2. Stock Godot invokes `on_focus_in()` from `applicationDidBecomeActive:`. However, because the StikDebug wait screen was presented during `didFinishLaunchingWithOptions:`, iOS had already fired `applicationDidBecomeActive:` at launch.
+  3. When Godot was subsequently started via button tap (`sts2_forceStartWithoutJit:`) or JIT polling (`sts2_pollJitStatus:`), `self.window.rootViewController` was updated to `GDTViewController`, but iOS never re-sent `applicationDidBecomeActive:`.
+  4. Without calling `[viewController.godotView startRendering]` or `OS_AppleEmbedded::on_focus_in()`, `CADisplayLink` was never added to the runloop. Consequently, `drawView` never executed, `GDTViewRenderer.setupView:` never invoked `Main::setup2()` or `Main::start()`, and the screen hung indefinitely on black.
+  5. Furthermore, `sts2_forceStartWithoutJit:` executed `apple_embedded_main` synchronously within UIKit's touch event dispatcher, swapping `rootViewController` mid-touch.
+- **Decision & Fix:**
+  1. In `drivers/apple_embedded/app_delegate_service.mm` (`patches/godot/sts2-ios-logging.patch`), at the end of `sts2_startGodotEngine`, explicitly invoke:
+     ```objc
+     [viewController.godotView startRendering];
+     if (OS_AppleEmbedded::get_singleton()) {
+         OS_AppleEmbedded::get_singleton()->on_focus_in();
+     }
+     ```
+  2. In `sts2_forceStartWithoutJit:`, `sts2_pollJitStatus:`, and `applicationDidBecomeActive:`, decouple engine initialization by dispatching to the next runloop turn:
+     ```objc
+     dispatch_async(dispatch_get_main_queue(), ^{
+         [self sts2_startGodotEngine];
+     });
+     ```
+  3. Verified `CADisplayLink` registers on `[NSRunLoop currentRunLoop]` for `NSRunLoopCommonModes`, ensuring initial frames immediately drive `Main::setup2()`, managed `.NET` startup, and `Main::start()`.
+
+---
+
 ## 3. Verification & Diagnostic Commands
 
 - **Read Device App Output Log:**

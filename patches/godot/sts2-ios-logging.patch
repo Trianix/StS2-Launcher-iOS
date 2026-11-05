@@ -1,5 +1,5 @@
 diff --git a/drivers/apple_embedded/app_delegate_service.mm b/drivers/apple_embedded/app_delegate_service.mm
-index 07b52b9..3ed105b 100644
+index 07b52b9..f333afe 100644
 --- a/drivers/apple_embedded/app_delegate_service.mm
 +++ b/drivers/apple_embedded/app_delegate_service.mm
 @@ -48,6 +48,7 @@ extern char **gargv;
@@ -10,7 +10,7 @@ index 07b52b9..3ed105b 100644
  
  @implementation GDTAppDelegateService
  
-@@ -61,30 +62,83 @@ enum {
+@@ -61,30 +62,87 @@ enum {
  };
  
  static GDTViewController *mainViewController = nil;
@@ -42,7 +42,9 @@ index 07b52b9..3ed105b 100644
 +		fflush(stderr);
 +		[timer invalidate];
 +		sJitPollTimer = nil;
-+		[self sts2_startGodotEngine];
++		dispatch_async(dispatch_get_main_queue(), ^{
++			[self sts2_startGodotEngine];
++		});
 +		return;
 +	}
 +	if (sJitStatusLabel != nil) {
@@ -70,7 +72,9 @@ index 07b52b9..3ed105b 100644
 +	fflush(stderr);
 +	unsetenv("STS2_MONO_JIT");
 +	setenv("STS2_MONO_FORCE_INTERP", "1", 1);
-+	[self sts2_startGodotEngine];
++	dispatch_async(dispatch_get_main_queue(), ^{
++		[self sts2_startGodotEngine];
++	});
 +}
 +
 +- (void)sts2_startGodotEngine {
@@ -108,10 +112,16 @@ index 07b52b9..3ed105b 100644
  	}
  
  	GDTViewController *viewController = [[GDTViewController alloc] init];
-@@ -130,11 +177,82 @@ static GDTViewController *mainViewController = nil;
- 	}
+@@ -131,10 +189,88 @@ static GDTViewController *mainViewController = nil;
  
  	[[AVAudioSession sharedInstance] setCategory:category withOptions:options error:nil];
+ 
++	fprintf(stderr, "[Godot iOS] Explicitly kicking off GodotView rendering and on_focus_in...\n");
++	fflush(stderr);
++	[viewController.godotView startRendering];
++	if (OS_AppleEmbedded::get_singleton()) {
++		OS_AppleEmbedded::get_singleton()->on_focus_in();
++	}
 +}
 +
 +- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
@@ -180,7 +190,7 @@ index 07b52b9..3ed105b 100644
 +												   selector:@selector(sts2_pollJitStatus:)
 +												   userInfo:nil
 +													repeats:YES];
- 
++
  	return YES;
  }
  
@@ -191,7 +201,7 @@ index 07b52b9..3ed105b 100644
  	if ([notification.name isEqualToString:AVAudioSessionInterruptionNotification]) {
  		if ([[notification.userInfo valueForKey:AVAudioSessionInterruptionTypeKey] isEqualToNumber:[NSNumber numberWithInt:AVAudioSessionInterruptionTypeBegan]]) {
  			NSLog(@"Audio interruption began");
-@@ -147,13 +265,15 @@ static GDTViewController *mainViewController = nil;
+@@ -147,13 +283,15 @@ static GDTViewController *mainViewController = nil;
  }
  
  - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
@@ -209,7 +219,7 @@ index 07b52b9..3ed105b 100644
  }
  
  // When application goes to background (e.g. user switches to another app or presses Home),
-@@ -167,19 +287,38 @@ static GDTViewController *mainViewController = nil;
+@@ -167,19 +305,40 @@ static GDTViewController *mainViewController = nil;
  // notification panel by swiping from the upper part of the screen.
  
  - (void)applicationWillResignActive:(UIApplication *)application {
@@ -228,7 +238,9 @@ index 07b52b9..3ed105b 100644
 +		if (sts2_ios_is_jit_ready(&pid, &traced, &cs_debugged)) {
 +			fprintf(stderr, "[Godot iOS] JIT ready on applicationDidBecomeActive (pid=%d, P_TRACED=%d, CS_DEBUGGED=%d). Starting Godot...\n", pid, traced, cs_debugged);
 +			fflush(stderr);
-+			[self sts2_startGodotEngine];
++			dispatch_async(dispatch_get_main_queue(), ^{
++				[self sts2_startGodotEngine];
++			});
 +		}
 +		return;
 +	}

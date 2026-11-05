@@ -39,7 +39,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ios/libs
-          key: ios-libs-v2-${{ hashFiles('scripts/build-ios-mono.sh', 'scripts/build-godot-ios.sh', 'patches/mono/**', 'patches/godot/**') }}
+          key: ios-libs-v3-${{ hashFiles('scripts/build-ios-mono.sh', 'scripts/build-godot-ios.sh', 'patches/mono/**', 'patches/godot/**') }}
 
       - name: Install SCons & Ninja
         if: steps.cache-ios-libs.outputs.cache-hit != 'true'

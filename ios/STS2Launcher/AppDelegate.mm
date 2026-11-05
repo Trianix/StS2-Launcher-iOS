@@ -138,6 +138,110 @@ static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
 // mov w0,#42 ; ret
 static const uint32_t kProbeCode[2] = { 0x52800540, 0xd65f03c0 };
 
+extern "C" void *sts2_jit26_prepare_region(void *address, size_t length) {
+#if defined(__aarch64__)
+    register void *x0 __asm__("x0") = address;
+    register size_t x1 __asm__("x1") = length;
+    register uint64_t x16 __asm__("x16") = 1;
+    __asm__ volatile (
+        "brk #0xf00d\n"
+        : "+r"(x0)
+        : "r"(x1), "r"(x16)
+        : "memory"
+    );
+    return x0;
+#else
+    return address;
+#endif
+}
+
+extern "C" void sts2_jit26_detach() {
+#if defined(__aarch64__)
+    register uint64_t x16 __asm__("x16") = 0;
+    __asm__ volatile (
+        "brk #0xf00d\n"
+        :
+        : "r"(x16)
+        : "memory"
+    );
+#endif
+}
+
+typedef void (*MonoLogCallback)(const char *log_domain, const char *log_level, const char *message, int fatal, void *user_data);
+typedef void (*mono_trace_set_log_handler_fn)(MonoLogCallback callback, void *user_data);
+typedef void (*mono_trace_set_print_handler_fn)(void (*handler)(const char *string, int is_stdout));
+typedef void (*mono_trace_set_printerr_handler_fn)(void (*handler)(const char *string, int is_stdout));
+
+static void sts2_mono_log_callback(const char *log_domain, const char *log_level, const char *message, int fatal, void *user_data) {
+    fprintf(stderr, "[Mono:%s:%s%s] %s\n",
+            log_domain ? log_domain : "core",
+            log_level ? log_level : "info",
+            fatal ? ":FATAL" : "",
+            message ? message : "");
+    fflush(stderr);
+}
+
+static void sts2_mono_print_callback(const char *string, int is_stdout) {
+    fprintf(stderr, "[Mono] %s\n", string ? string : "");
+    fflush(stderr);
+}
+
+static void sts2_install_mono_log_hooks() {
+    mono_trace_set_log_handler_fn set_log = (mono_trace_set_log_handler_fn)dlsym(RTLD_DEFAULT, "mono_trace_set_log_handler");
+    if (set_log) {
+        set_log(sts2_mono_log_callback, nullptr);
+    }
+    mono_trace_set_print_handler_fn set_print = (mono_trace_set_print_handler_fn)dlsym(RTLD_DEFAULT, "mono_trace_set_print_handler");
+    if (set_print) {
+        set_print(sts2_mono_print_callback);
+    }
+    mono_trace_set_printerr_handler_fn set_err = (mono_trace_set_printerr_handler_fn)dlsym(RTLD_DEFAULT, "mono_trace_set_printerr_handler");
+    if (set_err) {
+        set_err(sts2_mono_print_callback);
+    }
+}
+
+static bool sts2_jit_probe_case_jit26(const char *name) {
+    struct sigaction sa, oldSegv, oldBus, oldTrap;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = sts2_jit_probe_handler;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, &oldSegv);
+    sigaction(SIGBUS, &sa, &oldBus);
+    sigaction(SIGTRAP, &sa, &oldTrap);
+
+    bool ok = false;
+    int sig = sigsetjmp(sJitProbeJmp, 1);
+    if (sig != 0) {
+        printf("[JITProbe] %s: FAULT signal %d (errno=%d)\n", name, sig, errno);
+        ok = false;
+    } else {
+        size_t len = 16384;
+        void *p = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (p == MAP_FAILED) {
+            printf("[JITProbe] %s: mmap FAILED errno=%d (%s)\n", name, errno, strerror(errno));
+            ok = false;
+        } else {
+            memcpy(p, kProbeCode, sizeof(kProbeCode));
+            sys_icache_invalidate(p, sizeof(kProbeCode));
+            void *rx = sts2_jit26_prepare_region(p, len);
+            if (!rx) {
+                printf("[JITProbe] %s: prepare_region returned NULL\n", name);
+            } else {
+                sys_icache_invalidate(rx, sizeof(kProbeCode));
+                int r = ((int (*)(void))rx)();
+                printf("[JITProbe] %s: OK, executed generated code, returned %d\n", name, r);
+                ok = (r == 42);
+            }
+            munmap(p, len);
+        }
+    }
+    sigaction(SIGSEGV, &oldSegv, NULL);
+    sigaction(SIGBUS, &oldBus, NULL);
+    sigaction(SIGTRAP, &oldTrap, NULL);
+    return ok;
+}
+
 // mode 0: plain RWX mmap. mode 1: RW then mprotect(RX). mode 2: MAP_JIT + write-protect toggle.
 static bool sts2_jit_probe_case(int mode, const char *name) {
     struct sigaction sa, oldSegv, oldBus;
@@ -191,14 +295,16 @@ static bool sts2_run_jit_probe() {
     bool rwxOk = sts2_jit_probe_case(0, "plain RWX mmap");
     bool rxOk = sts2_jit_probe_case(1, "RW mmap + mprotect(RX)");
     bool mapJitOk = sts2_jit_probe_case(2, "MAP_JIT + pthread_jit_write_protect_np");
-    bool anyJitOk = rwxOk || rxOk || mapJitOk;
-    printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d)\n",
-           anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk);
+    bool jit26Ok = sts2_jit_probe_case_jit26("StikDebug universal.js (brk #0xf00d)");
+    bool anyJitOk = rwxOk || rxOk || mapJitOk || jit26Ok;
+    printf("[JITProbe] Overall JIT capability: %s (traced=%d, rwx=%d, rx=%d, mapJit=%d, jit26=%d)\n",
+           anyJitOk ? "AVAILABLE" : "UNAVAILABLE", traced, rwxOk, rxOk, mapJitOk, jit26Ok);
     fflush(stdout);
     return anyJitOk;
 }
 
 extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debugged) {
+    sts2_install_mono_log_hooks();
     static bool sJitConfirmed = false;
     int pid = (int)getpid();
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, pid };
@@ -350,16 +456,23 @@ static AppDelegate *sSharedDelegate = nil;
 }
 
 + (void)load {
-    // 1. Redirect stdout and stderr to Documents/app_output.log so all Godot/Mono/C# logs are accessible
+    // 1. Redirect stdout and stderr to Documents/app_output.log using shared fd so lines don't overwrite each other
     NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (docPaths.count > 0) {
         NSString *logPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output.log"];
-        freopen([logPath UTF8String], "w+", stdout);
-        freopen([logPath UTF8String], "a+", stderr);
-        setvbuf(stdout, NULL, _IONBF, 0);
-        setvbuf(stderr, NULL, _IONBF, 0);
+        int logFd = open([logPath UTF8String], O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
+        if (logFd >= 0) {
+            dup2(logFd, STDOUT_FILENO);
+            dup2(logFd, STDERR_FILENO);
+            if (logFd != STDOUT_FILENO && logFd != STDERR_FILENO) {
+                close(logFd);
+            }
+            setvbuf(stdout, NULL, _IONBF, 0);
+            setvbuf(stderr, NULL, _IONBF, 0);
+        }
     }
     sts2_install_crash_handlers();
+    sts2_install_mono_log_hooks();
     setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 0);
     NSLog(@"[STS2Launcher iOS] Logging & crash signal handlers initialized (PID=%d); stdout/stderr -> Documents/app_output.log", getpid());
 

@@ -212,6 +212,131 @@ static NSArray *sts2_determine_active_godot_cmdline() {
 
 @end
 
+extern int gargc;
+extern char **gargv;
+extern int apple_embedded_main(int, char **);
+
+@interface GDTApplicationDelegate : UIResponder <UIApplicationDelegate>
++ (NSArray *)services;
++ (void)addService:(id)service;
+- (BOOL)sts2_application:(UIApplication *)application willFinishLaunchingWithOptions:(NSDictionary *)launchOptions;
+- (BOOL)sts2_application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions;
+@end
+
+@interface GDTAppDelegateService : NSObject <UIApplicationDelegate>
+@property (strong, nonatomic) UIWindow *window;
+- (BOOL)sts2_service_didFinishLaunchingWithOptions:(UIApplication *)application launchOptions:(NSDictionary *)launchOptions;
+@end
+
+static void sts2_swizzle(Class cls, SEL origSel, SEL swizSel) {
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method swizMethod = class_getInstanceMethod(cls, swizSel);
+    if (!origMethod || !swizMethod) {
+        NSLog(@"[STS2Launcher iOS] Swizzle lookup failed for class %@ SEL %@", NSStringFromClass(cls), NSStringFromSelector(origSel));
+        return;
+    }
+    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(swizMethod), method_getTypeEncoding(swizMethod));
+    if (didAdd) {
+        class_replaceMethod(cls, swizSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, swizMethod);
+    }
+}
+
+@implementation GDTApplicationDelegate (STS2Hooks)
+
+- (BOOL)sts2_application:(UIApplication *)application willFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    NSLog(@"[STS2Launcher iOS] GDTApplicationDelegate willFinishLaunchingWithOptions intercepted");
+    [[AppDelegate sharedDelegate] ensureJitAndAudioConfigured];
+    return [self sts2_application:application willFinishLaunchingWithOptions:launchOptions];
+}
+
+- (BOOL)sts2_application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    NSLog(@"[STS2Launcher iOS] GDTApplicationDelegate didFinishLaunchingWithOptions intercepted");
+    [[AppDelegate sharedDelegate] ensureJitAndAudioConfigured];
+    
+    Class gdtClass = [GDTApplicationDelegate class];
+    if ([gdtClass respondsToSelector:@selector(services)]) {
+        NSMutableArray *services = (NSMutableArray *)[gdtClass performSelector:@selector(services)];
+        if ([services isKindOfClass:[NSMutableArray class]] && ![services containsObject:[AppDelegate sharedDelegate]]) {
+            [services addObject:[AppDelegate sharedDelegate]];
+            NSLog(@"[STS2Launcher iOS] Registered AppDelegate into GDTApplicationDelegate services");
+        }
+    }
+    
+    return [self sts2_application:application didFinishLaunchingWithOptions:launchOptions];
+}
+
+@end
+
+@implementation GDTAppDelegateService (STS2Hooks)
+
+- (BOOL)sts2_service_didFinishLaunchingWithOptions:(UIApplication *)application launchOptions:(NSDictionary *)launchOptions {
+    NSLog(@"[STS2Launcher iOS] GDTAppDelegateService didFinishLaunchingWithOptions entered");
+    [[AppDelegate sharedDelegate] ensureJitAndAudioConfigured];
+
+    NSLog(@"[STS2Launcher iOS] gargc = %d", gargc);
+    for (int i = 0; i < gargc; i++) {
+        NSLog(@"[STS2Launcher iOS]   gargv[%d] = %s", i, gargv[i]);
+    }
+    fflush(stdout);
+    fflush(stderr);
+
+    BOOL res = [self sts2_service_didFinishLaunchingWithOptions:application launchOptions:launchOptions];
+    NSLog(@"[STS2Launcher iOS] Original didFinishLaunchingWithOptions returned: %d", res);
+
+    if (!res) {
+        NSLog(@"[STS2Launcher iOS] Startup returned NO. Mounting diagnostic UI instead of exit(0)...");
+        CGRect windowBounds = [[UIScreen mainScreen] bounds];
+        if (!self.window) {
+            self.window = [[UIWindow alloc] initWithFrame:windowBounds];
+        }
+        
+        UIViewController *diagVC = [[UIViewController alloc] init];
+        diagVC.view.backgroundColor = [UIColor colorWithRed:0.12f green:0.02f blue:0.02f alpha:1.0f];
+        
+        UIScrollView *scrollView = [[UIScrollView alloc] initWithFrame:windowBounds];
+        scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        
+        UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(20, 60, windowBounds.size.width - 40, 60)];
+        header.textColor = [UIColor colorWithRed:1.0f green:0.3f blue:0.3f alpha:1.0f];
+        header.font = [UIFont boldSystemFontOfSize:17];
+        header.numberOfLines = 2;
+        header.text = @"Godot Engine Startup Error\nLauncher Diagnostic View";
+        [scrollView addSubview:header];
+        
+        NSString *logTail = @"No log entries available.";
+        NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        if (docPaths.count > 0) {
+            NSString *logPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output.log"];
+            NSString *content = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:nil];
+            if (content.length > 0) {
+                if (content.length > 3000) {
+                    content = [content substringFromIndex:(content.length - 3000)];
+                }
+                logTail = content;
+            }
+        }
+        
+        UITextView *textView = [[UITextView alloc] initWithFrame:CGRectMake(20, 130, windowBounds.size.width - 40, windowBounds.size.height - 160)];
+        textView.backgroundColor = [UIColor colorWithRed:0.05f green:0.05f blue:0.05f alpha:1.0f];
+        textView.textColor = [UIColor colorWithRed:0.9f green:0.9f blue:0.9f alpha:1.0f];
+        textView.font = [UIFont fontWithName:@"Courier" size:11];
+        textView.editable = NO;
+        textView.text = logTail;
+        textView.layer.cornerRadius = 8;
+        [scrollView addSubview:textView];
+        
+        [diagVC.view addSubview:scrollView];
+        self.window.rootViewController = diagVC;
+        [self.window makeKeyAndVisible];
+    }
+
+    return res;
+}
+
+@end
+
 @implementation AppDelegate
 
 static AppDelegate *sSharedDelegate = nil;
@@ -256,22 +381,26 @@ static AppDelegate *sSharedDelegate = nil;
     sts2_determine_active_godot_cmdline();
 
     sSharedDelegate = [[AppDelegate alloc] init];
-    // Register as a Godot application delegate service, prepending so our delegate callbacks fire BEFORE GDTAppDelegateService
-    Class gdtClass = NSClassFromString(@"GDTApplicationDelegate");
-    if (gdtClass) {
-        if ([gdtClass respondsToSelector:@selector(services)]) {
-            NSMutableArray *services = (NSMutableArray *)[gdtClass performSelector:@selector(services)];
-            if ([services isKindOfClass:[NSMutableArray class]]) {
-                [services insertObject:sSharedDelegate atIndex:0];
-                NSLog(@"[STS2Launcher iOS] Pre-pended AppDelegate to GDTApplicationDelegate services (count=%lu)", (unsigned long)services.count);
-            } else if ([gdtClass respondsToSelector:@selector(addService:)]) {
-                [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
-                NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
-            }
-        } else if ([gdtClass respondsToSelector:@selector(addService:)]) {
-            [gdtClass performSelector:@selector(addService:) withObject:sSharedDelegate];
-            NSLog(@"[STS2Launcher iOS] Registered AppDelegate as GDTApplicationDelegate service");
-        }
+
+    // Swizzle GDTApplicationDelegate lifecycle hooks
+    Class gdtAppClass = NSClassFromString(@"GDTApplicationDelegate");
+    if (gdtAppClass) {
+        sts2_swizzle(gdtAppClass,
+                     @selector(application:willFinishLaunchingWithOptions:),
+                     @selector(sts2_application:willFinishLaunchingWithOptions:));
+        sts2_swizzle(gdtAppClass,
+                     @selector(application:didFinishLaunchingWithOptions:),
+                     @selector(sts2_application:didFinishLaunchingWithOptions:));
+        NSLog(@"[STS2Launcher iOS] Swizzled GDTApplicationDelegate lifecycle hooks.");
+    }
+
+    // Swizzle GDTAppDelegateService launch handler
+    Class gdtServiceClass = NSClassFromString(@"GDTAppDelegateService");
+    if (gdtServiceClass) {
+        sts2_swizzle(gdtServiceClass,
+                     @selector(application:didFinishLaunchingWithOptions:),
+                     @selector(sts2_service_didFinishLaunchingWithOptions:));
+        NSLog(@"[STS2Launcher iOS] Swizzled GDTAppDelegateService launch handler.");
     }
 }
 

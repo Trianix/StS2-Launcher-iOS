@@ -1,0 +1,47 @@
+diff --git a/drivers/apple_embedded/app_delegate_service.mm b/drivers/apple_embedded/app_delegate_service.mm
+index 07b52b9..17530e9 100644
+--- a/drivers/apple_embedded/app_delegate_service.mm
++++ b/drivers/apple_embedded/app_delegate_service.mm
+@@ -82,8 +82,8 @@ static GDTViewController *mainViewController = nil;
+ 	int err = apple_embedded_main(gargc, gargv);
+ 
+ 	if (err != 0) {
+-		// bail, things did not go very well for us, should probably output a message on screen with our error code...
+-		exit(0);
++		fprintf(stderr, "[Godot] CRITICAL: apple_embedded_main failed with error code: %d\n", err);
++		fflush(stderr);
+ 		return NO;
+ 	}
+ 
+diff --git a/drivers/apple_embedded/os_apple_embedded.mm b/drivers/apple_embedded/os_apple_embedded.mm
+index 07d1f8a..bd35ce4 100644
+--- a/drivers/apple_embedded/os_apple_embedded.mm
++++ b/drivers/apple_embedded/os_apple_embedded.mm
+@@ -142,6 +142,7 @@ OS_AppleEmbedded::OS_AppleEmbedded() {
+ 
+ 	Vector<Logger *> loggers;
+ 	loggers.push_back(memnew(OsLogLogger(NSBundle.mainBundle.bundleIdentifier.UTF8String)));
++	loggers.push_back(memnew(StdLogger));
+ 	_set_logger(memnew(CompositeLogger(loggers)));
+ 
+ 	AudioDriverManager::add_driver(&audio_driver);
+diff --git a/platform/ios/main_ios.mm b/platform/ios/main_ios.mm
+index 8f7700f..b4e9882 100644
+--- a/platform/ios/main_ios.mm
++++ b/platform/ios/main_ios.mm
+@@ -69,7 +69,15 @@ int apple_embedded_main(int argc, char **argv) {
+ 	char *fargv[64];
+ 	argc = process_args(argc, argv, fargv);
+ 
++	fprintf(stderr, "[Godot iOS] apple_embedded_main: argc=%d\n", argc);
++	for (int i = 0; i < argc; i++) {
++		fprintf(stderr, "[Godot iOS]   argv[%d] = %s\n", i, fargv[i]);
++	}
++	fflush(stderr);
++
+ 	Error err = Main::setup(fargv[0], argc - 1, &fargv[1], false);
++	fprintf(stderr, "[Godot iOS] Main::setup returned: %d\n", (int)err);
++	fflush(stderr);
+ 
+ 	if (err != OK) {
+ 		if (err == ERR_HELP) { // Returned by --help and --version, so success.

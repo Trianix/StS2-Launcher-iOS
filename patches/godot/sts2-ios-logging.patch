@@ -1,8 +1,8 @@
 diff --git a/drivers/apple_embedded/app_delegate_service.mm b/drivers/apple_embedded/app_delegate_service.mm
-index 07b52b9..17530e9 100644
+index 07b52b9..bb326e9 100644
 --- a/drivers/apple_embedded/app_delegate_service.mm
 +++ b/drivers/apple_embedded/app_delegate_service.mm
-@@ -82,8 +82,8 @@ static GDTViewController *mainViewController = nil;
+@@ -82,8 +82,19 @@ static GDTViewController *mainViewController = nil;
  	int err = apple_embedded_main(gargc, gargv);
  
  	if (err != 0) {
@@ -10,6 +10,17 @@ index 07b52b9..17530e9 100644
 -		exit(0);
 +		fprintf(stderr, "[Godot] CRITICAL: apple_embedded_main failed with error code: %d\n", err);
 +		fflush(stderr);
++
++		UIViewController *diagVC = [[UIViewController alloc] init];
++		diagVC.view.backgroundColor = [UIColor colorWithRed:0.12f green:0.02f blue:0.02f alpha:1.0f];
++		UILabel *label = [[UILabel alloc] initWithFrame:CGRectInset(windowBounds, 20, 60)];
++		label.textColor = [UIColor whiteColor];
++		label.numberOfLines = 0;
++		label.font = [UIFont fontWithName:@"Courier" size:13];
++		label.text = [NSString stringWithFormat:@"Godot Engine Startup Error\n\napple_embedded_main returned: %d\n\nCheck Documents/app_output.log for details.", err];
++		[diagVC.view addSubview:label];
++		self.window.rootViewController = diagVC;
++		[self.window makeKeyAndVisible];
  		return NO;
  	}
  

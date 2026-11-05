@@ -70,7 +70,7 @@ static bool sts2_jit_probe_case(int mode, const char *name) {
     sa.sa_handler = sts2_jit_probe_handler;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, &oldSegv);
-    sigaction(SIGBUS, &oldBus);
+    sigaction(SIGBUS, &sa, &oldBus);
 
     bool ok = false;
     int sig = sigsetjmp(sJitProbeJmp, 1);

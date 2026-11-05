@@ -32,9 +32,15 @@ fi
 source "$ROOT/venv/bin/activate"
 jobs="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)"
 
-echo "Building Godot for iOS (platform=ios arch=arm64 target=$TARGET module_mono_enabled=yes vulkan=no metal=yes)..."
+CCACHE_OPTS=""
+if command -v ccache >/dev/null 2>&1; then
+    echo "ccache detected: $(ccache --version | head -n 1)"
+    CCACHE_OPTS="c_compiler_launcher=ccache cpp_compiler_launcher=ccache"
+fi
+
+echo "Building Godot for iOS (platform=ios arch=arm64 target=$TARGET module_mono_enabled=yes vulkan=no metal=yes $CCACHE_OPTS)..."
 cd "$GODOT_DIR"
-scons platform=ios arch=arm64 target="$TARGET" module_mono_enabled=yes vulkan=no metal=yes -j"$jobs"
+scons platform=ios arch=arm64 target="$TARGET" module_mono_enabled=yes vulkan=no metal=yes $CCACHE_OPTS -j"$jobs"
 
 BUILT_LIB="$GODOT_DIR/bin/libgodot.ios.$TARGET.arm64.a"
 if [ ! -f "$BUILT_LIB" ]; then

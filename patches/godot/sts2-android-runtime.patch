@@ -67,7 +67,7 @@ index 14dd433..d8e8c3a 100644
  #else
  #if defined(WINDOWS_ENABLED)
  	String probe_path = GodotSharpDirs::get_api_assemblies_dir()
-@@ -296,7 +310,145 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
+@@ -296,6 +310,244 @@ bool load_hostfxr(void *&r_hostfxr_dll_handle) {
  }
  
  #ifndef TOOLS_ENABLED
@@ -85,6 +85,21 @@ index 14dd433..d8e8c3a 100644
 +MonoAssembly *mono_assembly_load_from_full(MonoImage *image, const char *fname, MonoImageOpenStatus *status, bool refonly);
 +void mono_jit_set_aot_mode(int mode);
 +void mono_loader_install_pinvoke_override(PInvokeOverrideFn override_fn);
++typedef void MonoDomain;
++typedef void MonoClass;
++typedef void MonoMethod;
++typedef void MonoObject;
++MonoDomain *mono_get_root_domain(void);
++MonoAssemblyName *mono_assembly_name_new(const char *name);
++void mono_assembly_name_free(MonoAssemblyName *aname);
++MonoAssembly *mono_assembly_loaded(MonoAssemblyName *aname);
++MonoAssembly *mono_assembly_load_full(MonoAssemblyName *aname, const char *basedir, MonoImageOpenStatus *status, bool refonly);
++MonoImage *mono_assembly_get_image(MonoAssembly *assembly);
++MonoClass *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
++MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
++MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
++void *mono_object_unbox(MonoObject *obj);
++void mono_print_unhandled_exception(MonoObject *exc);
 +}
 +}
 +
@@ -151,8 +166,92 @@ index 14dd433..d8e8c3a 100644
 +
 +	return try_dlsym(RTLD_DEFAULT, entrypoint_name);
 +}
++
++static bool ios_invoke_godot_plugin_init(const char *assembly_name, const char *type_name, const char *method_name, void *godot_dll_handle, void *managed_callbacks, const void **interop_funcs, int32_t interop_funcs_size) {
++	void *domain = mono_native::mono_get_root_domain();
++	if (!domain) {
++		print_line(".NET: iOS mono_get_root_domain returned null");
++		return false;
++	}
++	MonoAssemblyName *aname = mono_native::mono_assembly_name_new(assembly_name);
++	MonoAssembly *assembly = mono_native::mono_assembly_loaded(aname);
++	if (!assembly) {
++		assembly = mono_native::mono_assembly_load_full(aname, nullptr, nullptr, false);
++	}
++	mono_native::mono_assembly_name_free(aname);
++	if (!assembly) {
++		print_line(String(".NET: iOS assembly '") + assembly_name + "' not loaded");
++		return false;
++	}
++	MonoImage *image = mono_native::mono_assembly_get_image(assembly);
++	const char *last_dot = strrchr(type_name, '.');
++	MonoClass *klass = nullptr;
++	if (last_dot) {
++		char ns[256];
++		size_t ns_len = last_dot - type_name;
++		if (ns_len < sizeof(ns)) {
++			strncpy(ns, type_name, ns_len);
++			ns[ns_len] = '\0';
++			klass = mono_native::mono_class_from_name(image, ns, last_dot + 1);
++		}
++	} else {
++		klass = mono_native::mono_class_from_name(image, "", type_name);
++	}
++	if (!klass) {
++		print_line(String(".NET: iOS class '") + type_name + "' not found");
++		return false;
++	}
++	MonoMethod *method = mono_native::mono_class_get_method_from_name(klass, method_name, 4);
++	if (!method) {
++		print_line(String(".NET: iOS method '") + method_name + "' not found");
++		return false;
++	}
++	void *arg0 = godot_dll_handle;
++	void *arg1 = managed_callbacks;
++	void *arg2 = (void *)interop_funcs;
++	int32_t arg3 = interop_funcs_size;
++	void *args[4] = { &arg0, &arg1, &arg2, &arg3 };
++	MonoObject *exc = nullptr;
++	MonoObject *res = mono_native::mono_runtime_invoke(method, nullptr, args, &exc);
++	if (exc) {
++		print_line(String(".NET: iOS '") + method_name + "' threw an unhandled exception:");
++		mono_native::mono_print_unhandled_exception(exc);
++		return false;
++	}
++	int ret_val = 1;
++	if (res) {
++		ret_val = *(int *)mono_native::mono_object_unbox(res);
++	}
++	print_line(String(".NET: iOS '") + method_name + "' invoked via mono_runtime_invoke, returned " + itos(ret_val));
++	return (ret_val != 0);
++}
++
++static void ios_invoke_sts2mobile_apply() {
++	void *domain = mono_native::mono_get_root_domain();
++	if (!domain) return;
++	MonoAssemblyName *aname = mono_native::mono_assembly_name_new("STS2Mobile");
++	MonoAssembly *assembly = mono_native::mono_assembly_loaded(aname);
++	if (!assembly) {
++		assembly = mono_native::mono_assembly_load_full(aname, nullptr, nullptr, false);
++	}
++	mono_native::mono_assembly_name_free(aname);
++	if (!assembly) return;
++	MonoImage *image = mono_native::mono_assembly_get_image(assembly);
++	MonoClass *klass = mono_native::mono_class_from_name(image, "STS2Mobile", "ModEntry");
++	if (!klass) return;
++	MonoMethod *method = mono_native::mono_class_get_method_from_name(klass, "Apply", 0);
++	if (!method) return;
++	MonoObject *exc = nullptr;
++	mono_native::mono_runtime_invoke(method, nullptr, nullptr, &exc);
++	if (exc) {
++		print_line(".NET: iOS ModEntry.Apply threw an unhandled exception:");
++		mono_native::mono_print_unhandled_exception(exc);
++	} else {
++		print_line(".NET: iOS ModEntry.Apply completed successfully via mono_runtime_invoke");
++	}
++}
 +#endif
- bool load_coreclr(void *&r_coreclr_dll_handle) {
++bool load_coreclr(void *&r_coreclr_dll_handle) {
 +#if defined(IOS_ENABLED)
 +	{
 +	// On iOS, Mono is statically linked into the main executable.
@@ -261,7 +360,7 @@ index 14dd433..d8e8c3a 100644
  	print_verbose(".NET: Loading assembly '" + assembly_name + "' from '" + path + "'.");
  
  	if (!FileAccess::exists(path)) {
-@@ -577,28 +751,114 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
+@@ -577,27 +751,121 @@ godot_plugins_initialize_fn initialize_coreclr_and_godot_plugins(bool &r_runtime
  
  	String assembly_name = Path::get_csharp_project_name();
  
@@ -310,6 +409,7 @@ index 14dd433..d8e8c3a 100644
 +		print_line(".NET: STS2Mobile bootstrap delegate loaded");
 +	}
 +
++#if defined(ANDROID_ENABLED)
 +	int sts2mobile_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
 +			"STS2Mobile.ModEntry",
@@ -320,7 +420,7 @@ index 14dd433..d8e8c3a 100644
 +	} else {
 +		print_line(".NET: STS2Mobile bootstrap probe returned " + itos(sts2mobile_probe()));
 +	}
- 
++ 
 +	int sts2mobile_harmony_probe_rc = coreclr_create_delegate(coreclr_handle, domain_id,
 +			"STS2Mobile",
 +			"STS2Mobile.ModEntry",
@@ -342,7 +442,13 @@ index 14dd433..d8e8c3a 100644
 +	} else {
 +		print_line(".NET: STS2Mobile launcher-only delegate loaded");
 +	}
++#endif
 +
++#if defined(IOS_ENABLED)
++	// On iOS, invoke managed initializers via mono_runtime_invoke in GDMono::initialize
++	// to avoid dynamic heap trampolines under W^X. A non-null sentinel satisfies engine checks.
++	godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(1);
++#else
 +	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
 +	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
 +	if (is_launcher_bootstrap && sts2mobile_initialize != nullptr) {
@@ -359,7 +465,7 @@ index 14dd433..d8e8c3a 100644
 +			godot_plugins_initialize = reinterpret_cast<godot_plugins_initialize_fn>(sts2mobile_initialize);
 +		}
 +	}
-+
++#endif
 +#if defined(ANDROID_ENABLED)
 +	// On Android, creating the first delegate attaches this native engine thread in Mono's
 +	// GC-unsafe state. Transition to GC-safe so rendering doesn't block GC suspensions.
@@ -398,15 +504,27 @@ index 14dd433..d8e8c3a 100644
  	// Managed code can access it on its own on other platforms
  	godot_dll_handle = dlopen(nullptr, RTLD_NOW);
  #endif
-@@ -696,6 +956,7 @@ void GDMono::initialize() {
+@@ -696,6 +956,19 @@ void GDMono::initialize() {
  
  	plugin_callbacks = plugin_callbacks_res;
  #else
 +	print_line(".NET: Invoking godot_plugins_initialize...");
++#if defined(IOS_ENABLED)
++	bool init_ok = false;
++	const char *bootstrap_env = getenv("STS2_LAUNCHER_BOOTSTRAP");
++	bool is_launcher_bootstrap = (bootstrap_env != nullptr && strcmp(bootstrap_env, "1") == 0);
++	if (!is_launcher_bootstrap) {
++		init_ok = ios_invoke_godot_plugin_init(assembly_name.utf8().get_data(), "GodotPlugins.Game.Main", "InitializeFromGameProject", godot_dll_handle, &managed_callbacks, interop_funcs, interop_funcs_size);
++	}
++	if (!init_ok) {
++		init_ok = ios_invoke_godot_plugin_init("STS2Mobile", "STS2Mobile.ModEntry", "InitializeGodotSharp", godot_dll_handle, &managed_callbacks, interop_funcs, interop_funcs_size);
++	}
++#else
  	bool init_ok = godot_plugins_initialize(godot_dll_handle, &managed_callbacks,
  			interop_funcs, interop_funcs_size);
++#endif
  	ERR_FAIL_COND_MSG(!init_ok, ".NET: GodotPlugins initialization failed");
-@@ -703,10 +964,39 @@ void GDMono::initialize() {
+@@ -703,10 +964,44 @@ void GDMono::initialize() {
  
  	GDMonoCache::update_godot_api_cache(managed_callbacks);
  
@@ -426,11 +544,16 @@ index 14dd433..d8e8c3a 100644
 +			print_line(".NET: STS2Mobile Harmony constructor probe returned " + itos(sts2mobile_harmony_probe_result));
 +		}
 +
++#if defined(IOS_ENABLED)
++		print_line(".NET: Applying STS2Mobile bootstrap patches via mono_runtime_invoke");
++		ios_invoke_sts2mobile_apply();
++#else
 +		if (sts2mobile_apply != nullptr) {
 +			print_line(".NET: Applying STS2Mobile bootstrap patches");
 +			sts2mobile_apply();
 +			print_line(".NET: STS2Mobile bootstrap patches returned");
 +		}
++#endif
 +	}
 +#endif
  

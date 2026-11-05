@@ -266,20 +266,24 @@ extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debug
         return true;
     }
 
-    // Only enable JIT if the probe confirms executable memory can actually run
-    bool jitWorking = sts2_run_jit_probe();
-    if (jitWorking) {
-        setenv("STS2_MONO_JIT", "1", 1);
-        unsetenv("STS2_MONO_FORCE_INTERP");
-        sJitConfirmed = true;
-        NSLog(@"[STS2Launcher iOS] JIT confirmed working (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
-        return true;
+    // Only run the active executable probe if a debugger is attached (P_TRACED=1),
+    // or once on startup to record baseline capabilities in the log.
+    static bool sRanInitialProbe = false;
+    if (traced != 0 || !sRanInitialProbe) {
+        sRanInitialProbe = true;
+        bool jitWorking = sts2_run_jit_probe();
+        if (jitWorking) {
+            setenv("STS2_MONO_JIT", "1", 1);
+            unsetenv("STS2_MONO_FORCE_INTERP");
+            sJitConfirmed = true;
+            NSLog(@"[STS2Launcher iOS] JIT confirmed working (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
+            return true;
+        }
     }
 
     // JIT is not available; ensure Mono runs in Interpreter mode
     unsetenv("STS2_MONO_JIT");
     setenv("STS2_MONO_FORCE_INTERP", "1", 1);
-    NSLog(@"[STS2Launcher iOS] JIT probe unavailable (P_TRACED=%d, CS_DEBUGGED=%d); Mono will use Interpreter mode", traced, cs_debugged);
     return false;
 }
 

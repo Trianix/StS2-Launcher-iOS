@@ -10,7 +10,7 @@ index 07b52b9..3ed105b 100644
  
  @implementation GDTAppDelegateService
  
-@@ -61,30 +62,93 @@ enum {
+@@ -61,30 +62,83 @@ enum {
  };
  
  static GDTViewController *mainViewController = nil;
@@ -45,26 +45,16 @@ index 07b52b9..3ed105b 100644
 +		[self sts2_startGodotEngine];
 +		return;
 +	}
-+	if (sPollCount >= 8) {
-+		fprintf(stderr, "[Godot iOS] JIT not detected after 3s; auto-starting in Interpreter mode (MONO_AOT_MODE_INTERP_ONLY)...\n");
-+		fflush(stderr);
-+		unsetenv("STS2_MONO_JIT");
-+		setenv("STS2_MONO_FORCE_INTERP", "1", 1);
-+		[timer invalidate];
-+		sJitPollTimer = nil;
-+		[self sts2_startGodotEngine];
-+		return;
-+	}
-+	int remainingSeconds = (8 - sPollCount) * 4 / 10 + 1;
 +	if (sJitStatusLabel != nil) {
 +		sJitStatusLabel.text = [NSString stringWithFormat:
 +			@"Slay the Spire 2 — iOS\n\n"
-+			@"Checking for StikDebug JIT...\n\n"
++			@"Waiting for StikDebug JIT...\n\n"
 +			@"PID: %d  |  P_TRACED: %d  |  CS_DEBUGGED: %d\n\n"
-+			@"To use JIT, attach StikDebug now.\n"
-+			@"Starting in Interpreter mode in %d seconds...\n"
-+			@"(Or tap button below to start immediately)",
-+			pid, traced, cs_debugged, remainingSeconds];
++			@"1. Keep this app open / backgrounded\n"
++			@"2. In StikDebug, attach JIT to PID %d\n"
++			@"3. Return here — starts automatically!\n\n"
++			@"(Or tap button below to start in Interpreter mode)",
++			pid, traced, cs_debugged, pid];
 +	}
 +}
  

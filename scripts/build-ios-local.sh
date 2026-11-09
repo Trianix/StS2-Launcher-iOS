@@ -29,7 +29,10 @@ fi
 REF_APK="$DEPS_CACHE_DIR/StS2Launcher-v0.2.436-arm64-v8a.apk"
 if [ ! -f "$REF_APK" ]; then
     echo "Downloading pinned upstream release bundle for Harmony & GodotSharp assemblies..."
-    curl -fSL "https://github.com/SocialHummingbird/StS2-Launcher-Overhaul/releases/download/v0.2.436/StS2Launcher-v0.2.436-arm64-v8a.apk" -o "$REF_APK"
+    if ! curl -fSL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/SocialHummingbird/StS2-Launcher-Overhaul/releases/download/v0.2.436/StS2Launcher-v0.2.436-arm64-v8a.apk" -o "$REF_APK"; then
+        echo "Direct release download failed (e.g. 504); falling back to GitHub API asset stream..."
+        curl -fSL --retry 3 --retry-delay 2 --retry-all-errors -H "Accept: application/octet-stream" "https://api.github.com/repos/SocialHummingbird/StS2-Launcher-Overhaul/releases/assets/677299765" -o "$REF_APK"
+    fi
 fi
 
 REF_EXTRACT_DIR="$DEPS_CACHE_DIR/ref-apk"
@@ -53,7 +56,7 @@ cp -f "$IOS_BCL_ASSETS_DIR/MonoMod.Core.dll" "$UPSTREAM_PUBLISH_DIR/MonoMod.Core
 IOS_RUNTIME_NUPKG="$DEPS_CACHE_DIR/microsoft.netcore.app.runtime.mono.ios-arm64.9.0.7.nupkg"
 if [ ! -f "$IOS_RUNTIME_NUPKG" ]; then
     echo "Downloading Microsoft.NETCore.App.Runtime.Mono.ios-arm64 9.0.7..."
-    curl -fSL "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.ios-arm64/9.0.7/microsoft.netcore.app.runtime.mono.ios-arm64.9.0.7.nupkg" -o "$IOS_RUNTIME_NUPKG"
+    curl -fSL --retry 3 --retry-delay 2 --retry-all-errors "https://api.nuget.org/v3-flatcontainer/microsoft.netcore.app.runtime.mono.ios-arm64/9.0.7/microsoft.netcore.app.runtime.mono.ios-arm64.9.0.7.nupkg" -o "$IOS_RUNTIME_NUPKG"
 fi
 
 IOS_RUNTIME_EXTRACT="$DEPS_CACHE_DIR/ios-runtime"
@@ -115,7 +118,7 @@ mkdir -p "$IOS_DIR/libs"
 FMOD_ADDONS_ZIP="$DEPS_CACHE_DIR/fmod-gdextension-6.1.0-4.5.0-addons.zip"
 if [ ! -f "$FMOD_ADDONS_ZIP" ]; then
     echo "Downloading utopia-rise/fmod-gdextension 6.1.0-4.5.0 for iOS..."
-    curl -fSL "https://github.com/utopia-rise/fmod-gdextension/releases/download/6.1.0-4.5.0/addons.zip" -o "$FMOD_ADDONS_ZIP"
+    curl -fSL --retry 3 --retry-delay 2 --retry-all-errors "https://github.com/utopia-rise/fmod-gdextension/releases/download/6.1.0-4.5.0/addons.zip" -o "$FMOD_ADDONS_ZIP"
 fi
 
 FMOD_EXTRACT_DIR="$DEPS_CACHE_DIR/fmod-addons"
@@ -163,7 +166,7 @@ EOF
 SPINE_ZIP="$DEPS_CACHE_DIR/spine-godot-extension-4.2-4.5.1-stable.zip"
 if [ ! -f "$SPINE_ZIP" ]; then
     echo "Downloading spine-godot GDExtension 4.2 for Godot 4.5.1-stable..."
-    curl -fSL "https://spine-godot.s3.amazonaws.com/4.2/4.5.1-stable/spine-godot-extension-4.2-4.5.1-stable.zip" -o "$SPINE_ZIP"
+    curl -fSL --retry 3 --retry-delay 2 --retry-all-errors "https://spine-godot.s3.amazonaws.com/4.2/4.5.1-stable/spine-godot-extension-4.2-4.5.1-stable.zip" -o "$SPINE_ZIP"
 fi
 
 SPINE_EXTRACT_DIR="$DEPS_CACHE_DIR/spine-godot"

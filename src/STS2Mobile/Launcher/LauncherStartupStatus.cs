@@ -15,7 +15,7 @@ internal static partial class LauncherStartupStatus
         {
             var viewportSize = parent.GetViewport()?.GetVisibleRect().Size
                 ?? new Vector2(1920, 1080);
-            if (OperatingSystem.IsAndroid())
+            if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS())
                 return CreateAndroidStatusCard(parent, viewportSize);
 
             return CreateLegacyLabel(parent, viewportSize);

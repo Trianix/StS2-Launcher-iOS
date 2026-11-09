@@ -27,6 +27,12 @@ internal sealed partial class ShaderWarmupScreen : Control
 
     private async Task RunWarmupAsync(LauncherMonotonicDeadline deadline)
     {
+        if (OperatingSystem.IsIOS())
+        {
+            MarkWarmupComplete();
+            return;
+        }
+
         bool previousRenderCrashSuspected = _previousRenderCrashSuspected;
         var warmup = CreateWarmupRun(deadline);
         WriteWarmupStatus("collecting", "Collecting shader warmup materials");
@@ -82,7 +88,12 @@ internal sealed partial class ShaderWarmupScreen : Control
         return await renderer.RenderAsync(materials);
     }
 
-    private static void MarkWarmupComplete() => WriteWarmupVersion();
+    internal static void MarkWarmupComplete()
+    {
+        WriteWarmupVersion();
+        WriteWarmupStatus("completed", "Shader warmup skipped on iOS (Metal pipeline caching active)");
+    }
+
     private readonly struct ShaderWarmupRenderPlan
     {
         private const int DefaultBatchSize = 8;
@@ -111,14 +122,14 @@ internal sealed partial class ShaderWarmupScreen : Control
         internal static ShaderWarmupRenderPlan ForMaterialCount(int totalMaterialCount, bool previousRenderCrashSuspected)
         {
             int normalizedTotal = Math.Max(0, totalMaterialCount);
-            if (OperatingSystem.IsAndroid() && previousRenderCrashSuspected)
+            if ((OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) && previousRenderCrashSuspected)
             {
-                return Create("android-render-crash-recovery", "Previous shader warmup marker stopped during rendering; using a minimal compatibility warmup to avoid a crash loop", normalizedTotal, PreviousRenderCrashLimit, AndroidBatchSize, previousRenderCrashSuspected);
+                return Create("mobile-render-crash-recovery", "Previous shader warmup marker stopped during rendering; using a minimal compatibility warmup to avoid a crash loop", normalizedTotal, PreviousRenderCrashLimit, AndroidBatchSize, previousRenderCrashSuspected);
             }
 
-            if (OperatingSystem.IsAndroid() && normalizedTotal > AndroidLargeMaterialThreshold)
+            if ((OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) && normalizedTotal > AndroidLargeMaterialThreshold)
             {
-                return Create("android-bounded-large-shader-set", "Android shader set is large; using bounded compatibility warmup so startup is not blocked by driver/resource pressure", normalizedTotal, AndroidLargeMaterialLimit, AndroidBatchSize, previousRenderCrashSuspected);
+                return Create("mobile-bounded-large-shader-set", "Mobile shader set is large; using bounded compatibility warmup so startup is not blocked by driver/resource pressure", normalizedTotal, AndroidLargeMaterialLimit, AndroidBatchSize, previousRenderCrashSuspected);
             }
 
             return Create("full", "Full shader warmup selected", normalizedTotal, normalizedTotal, DefaultBatchSize, previousRenderCrashSuspected);

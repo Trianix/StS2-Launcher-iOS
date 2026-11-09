@@ -13,6 +13,13 @@ internal sealed partial class ShaderWarmupScreen
     {
         try
         {
+            if (OperatingSystem.IsIOS())
+            {
+                PatchHelper.Log("[ShaderWarmup] NeedsWarmup=false (iOS uses Metal driver; shader warmup disabled)");
+                WriteWarmupVersion();
+                return false;
+            }
+
             if (PreviousWarmupStatusSuggestsRenderCrash())
             {
                 PatchHelper.Log("[ShaderWarmup] NeedsWarmup=true (previous status marker stopped during rendering)");
@@ -44,7 +51,7 @@ internal sealed partial class ShaderWarmupScreen
         }
     }
 
-    private static void WriteWarmupVersion()
+    internal static void WriteWarmupVersion()
     {
         try
         {
@@ -72,7 +79,7 @@ internal sealed partial class ShaderWarmupScreen
         }
     }
 
-    private static void WriteWarmupStatus(string status, string detail, params string[] evidence)
+    internal static void WriteWarmupStatus(string status, string detail, params string[] evidence)
     {
         try
         {

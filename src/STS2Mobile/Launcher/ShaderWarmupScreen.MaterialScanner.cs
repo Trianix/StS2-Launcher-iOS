@@ -20,6 +20,11 @@ internal sealed partial class ShaderWarmupScreen
         {
             var materials = new WarmupMaterialCollection();
             var diagnostics = new ShaderWarmupMaterialScanDiagnostics();
+            if (OperatingSystem.IsIOS())
+            {
+                return new ShaderWarmupMaterialScanResult(new List<WarmupMaterial>(), diagnostics);
+            }
+
             await ScanLooseMaterialsAsync(materials, tree, progress, deadline, diagnostics);
             if (!deadline.IsExpired)
                 await ScanScenesAsync(materials, tree, progress, deadline, diagnostics);

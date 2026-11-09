@@ -56,14 +56,14 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
     }
 
     private static bool UseCompactRecoveryCopy(Vector2 viewportSize)
-        => OperatingSystem.IsAndroid() || Math.Min(viewportSize.X, viewportSize.Y) < 720f;
+        => OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() || Math.Min(viewportSize.X, viewportSize.Y) < 720f;
 
     private static int RecoveryMargin(Vector2 viewportSize)
-        => LauncherComponentTheme.ScaleInt(LayoutScale(viewportSize), OperatingSystem.IsAndroid() ? 16 : (int)ContainerMargin);
+        => LauncherComponentTheme.ScaleInt(LayoutScale(viewportSize), (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) ? 16 : (int)ContainerMargin);
 
     private static int RecoveryTopMargin(Vector2 viewportSize)
         => LauncherComponentTheme.ScaleInt(
             LayoutScale(viewportSize),
-            OperatingSystem.IsAndroid() ? 18 : (int)Math.Min(ContainerTop, Math.Max(16f, viewportSize.Y * 0.06f))
+            (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) ? 18 : (int)Math.Min(ContainerTop, Math.Max(16f, viewportSize.Y * 0.06f))
         );
 }

@@ -12,7 +12,7 @@ internal static partial class LauncherStartupFlow
         internal async Task RunGameStartupWithRecoveryAsync()
         {
             SetPhase(PhaseGameStartup, "Starting game scene...");
-            var recoveryControls = OperatingSystem.IsAndroid() ? null : LauncherStartupRecoveryControlPanel.Show(GameNode);
+            var recoveryControls = (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) ? null : LauncherStartupRecoveryControlPanel.Show(GameNode);
             await WaitForVisibleStartupFrameAsync("starting game");
             LauncherGameSceneReadiness.BeginStartup(Game, AttemptId);
             try

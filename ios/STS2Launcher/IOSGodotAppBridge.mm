@@ -7,6 +7,7 @@
 #import <unistd.h>
 #import <fcntl.h>
 #import <errno.h>
+#include <unordered_map>
 
 extern "C" {
 
@@ -321,9 +322,140 @@ struct Sts2InterpMethod {
 extern Sts2InterpMethod* mono_interp_get_imethod(void *method);
 extern void* mono_compile_method(void *method);
 extern char* mono_method_full_name(void *method, int signature);
+extern void* mono_method_get_wrapper_data(void *method, uint32_t id);
+
+struct Sts2MonoJitInfo {
+    void *d;
+    void *n;
+    void *code_start;
+    uint32_t unwind_info;
+    int32_t code_size;
+};
+
+#define STS2_MINT_SWITCH 271
+#define STS2_MINT_LDSTR 272
+#define STS2_MINT_LDSTR_DYNAMIC 273
+
+static const uint8_t s_interp_oplen[677] = {
+     1,  1,  1,  2,  1,  3,  2,  1,  3,  2,  2,  2,  2,  2,  2,  3,
+     4,  2,  3,  6,  4,  6,  3,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     5,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  5,  5,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  5,  8,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  5,  8,  4,  4,  3,  3,  3,  3,  3,  3,
+     3,  3,  4,  5,  7,  9,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  6,  6,  6,  6,  6,
+     6,  3,  3,  3,  3,  3,  3,  3,  4,  4,  4,  4,  4,  4,  4,  4,
+     3,  2,  3,  2,  4,  3,  2,  2,  2,  2,  1,  4,  4,  4,  4,  3,
+     3,  3,  3,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,
+     5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,
+     5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  5,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  3,  3,  3,  3,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  0,
+     3,  3,  3,  2,  2,  4,  4,  4,  5,  4,  5,  3,  5,  3,  3,  4,
+     4,  4,  4,  4,  4,  4,  3,  4,  4,  4,  4,  4,  3,  3,  3,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  3,  3,  3,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  5,  5,  5,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  6,  6,  4,  3,  5,  5,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,
+     4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,
+     3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  2,  2,  4,
+     5,  4,  5,  4,  5,  4,  5,  4,  5,  4,  5,  4,  4,  4,  4,  4,
+     4,  5,  5,  4,  4,  3,  3,  4,  3,  4,  3,  4,  3,  3,  3,  4,
+     5,  6,  4,  8,  5,  7,  6,  4,  5,  5,  4,  7,  3,  3,  2,  1,
+     4,  4,  4,  4,  4,  4,  5,  5,  5,  5,  5,  5,  2,  1,  1,  1,
+     1,  3,  4,  3,  3,  3,  3,  3,  3,  4,  3,  3,  3,  3,  3,  5,
+     3,  3,  3,  3,  4,  4,  3,  3,  3,  3,  3,  3,  4,  4,  3,  3,
+     3,  3,  3,  3,  4,  3,  3,  3,  3,  3,  5,  3,  3,  3,  3,  4,
+     4,  3,  3,  3,  3,  3,  3,  4,  4,  2,  5,  2,  5,  1,  2,  4,
+     4,  4,  4,  3,  3,  3,  3,  3,  3,  3,  3, 10,  3,  3,  3,  3,
+     4,  5,  6,  5,  3,  3,  3,  4,  3,  3,  5,  3,  3,  4,  4,  5,
+     5,  4,  4,  4,  4
+};
+
+static inline int sts2_interp_op_len(const unsigned short *ip) {
+    unsigned short op = *ip;
+    if (op >= 677) return 1;
+    int len = s_interp_oplen[op];
+    if (len == 0) { // MINT_SWITCH (opcode 271)
+        uint32_t n = (uint32_t)ip[2] | ((uint32_t)ip[3] << 16);
+        len = 4 + (int)n * 2;
+    }
+    return len > 0 ? len : 1;
+}
+
+static void sts2_resolve_dynamic_strings(Sts2InterpMethod *imethod, void *dynamic_mono_method) {
+    if (!imethod || !imethod->code || !imethod->data_items) {
+        return;
+    }
+
+    size_t max_words = 0;
+    Sts2MonoJitInfo *jinfo = (Sts2MonoJitInfo*)imethod->jinfo;
+    if (jinfo && jinfo->code_start == imethod->code && jinfo->code_size > 0) {
+        max_words = (size_t)jinfo->code_size / sizeof(unsigned short);
+    } else {
+        max_words = 32768;
+    }
+
+    std::unordered_map<uint32_t, void*> resolved_tokens;
+    unsigned short *ip = imethod->code;
+    unsigned short *end = imethod->code + max_words;
+
+    int rewritten_count = 0;
+    while (ip < end) {
+        unsigned short op = *ip;
+        if (op >= 677) {
+            break;
+        }
+
+        if (op == STS2_MINT_LDSTR_DYNAMIC) {
+            uint32_t token_idx = ip[2];
+            auto it = resolved_tokens.find(token_idx);
+            if (it != resolved_tokens.end()) {
+                imethod->data_items[token_idx] = it->second;
+                *ip = STS2_MINT_LDSTR;
+                rewritten_count++;
+            } else {
+                uint32_t strtoken = (uint32_t)(uintptr_t)imethod->data_items[token_idx];
+                void *resolved_str = mono_method_get_wrapper_data(dynamic_mono_method, strtoken);
+                if (resolved_str) {
+                    imethod->data_items[token_idx] = resolved_str;
+                    resolved_tokens[token_idx] = resolved_str;
+                    *ip = STS2_MINT_LDSTR;
+                    rewritten_count++;
+                } else {
+                    NSLog(@"[STS2Launcher iOS] Warning: failed to resolve wrapper data for strtoken %u at token_idx %u",
+                          strtoken, token_idx);
+                }
+            }
+        }
+
+        int len = sts2_interp_op_len(ip);
+        if (len <= 0) break;
+        ip += len;
+    }
+
+    if (rewritten_count > 0) {
+        char *mname = mono_method_full_name(dynamic_mono_method, 1);
+        NSLog(@"[STS2Launcher iOS] Rewrote %d MINT_LDSTR_DYNAMIC -> MINT_LDSTR opcodes in %s",
+              rewritten_count, mname ? mname : "<dynamic>");
+        if (mname) free(mname);
+    }
+}
 
 static void sts2_copy_interp_body(Sts2InterpMethod *dst_target, Sts2InterpMethod *src_body) {
-    dst_target->method = src_body->method;
+    // NOTE: Keep dst_target->method and dst_target->next_jit_code_hash untouched!
+    // They are required by MonoDomain's jit_code_hash internal hash table to identify
+    // the method during mono_interp_get_imethod lookups.
     dst_target->code = src_body->code;
     dst_target->func = src_body->func;
     dst_target->clauses = src_body->clauses;
@@ -394,6 +526,13 @@ IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void
         if (dst_name) free(dst_name);
         return;
     }
+
+    // Pre-resolve dynamic string literals so MINT_LDSTR_DYNAMIC opcodes become standard MINT_LDSTR
+    // and execute cleanly without MONO_WRAPPER_DYNAMIC_METHOD assertions.
+    if (dst_imethod->optimized_imethod) {
+        sts2_resolve_dynamic_strings(dst_imethod->optimized_imethod, dst_mono_method);
+    }
+    sts2_resolve_dynamic_strings(dst_imethod, dst_mono_method);
 
     if (src_imethod->optimized_imethod) {
         sts2_copy_interp_body(src_imethod->optimized_imethod, compiled_dst);

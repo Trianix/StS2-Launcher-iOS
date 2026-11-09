@@ -6,6 +6,35 @@ namespace STS2Mobile.Patches;
 
 internal static partial class PlatformPatches
 {
+    private static readonly Dictionary<string, string> TwoLetterToThreeLetter = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "en", "eng" },
+        { "de", "deu" },
+        { "fr", "fra" },
+        { "es", "spa" },
+        { "it", "ita" },
+        { "ja", "jpn" },
+        { "ko", "kor" },
+        { "zh", "zho" },
+        { "ru", "rus" },
+        { "pl", "pol" },
+        { "pt", "por" },
+        { "nl", "nld" },
+        { "sv", "swe" },
+        { "tr", "tur" },
+        { "uk", "ukr" },
+        { "vi", "vie" },
+        { "th", "tha" },
+        { "cs", "ces" },
+        { "hu", "hun" },
+        { "el", "ell" },
+        { "da", "dan" },
+        { "fi", "fin" },
+        { "no", "nor" },
+        { "nb", "nob" },
+        { "nn", "nno" },
+    };
+
     private static string ResolveThreeLetterLanguageCode()
     {
         try
@@ -38,6 +67,25 @@ internal static partial class PlatformPatches
         var trimmed = locale?.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
             return false;
+
+        // Fast-path: check ISO 639-1 language code or prefix before '-' (e.g. "en-AU" -> "en")
+        var prefix = trimmed;
+        var dashIdx = prefix.IndexOf('-');
+        if (dashIdx > 0)
+            prefix = prefix.Substring(0, dashIdx);
+
+        if (TwoLetterToThreeLetter.TryGetValue(prefix, out var mapped))
+        {
+            threeLetter = mapped;
+            return true;
+        }
+
+        // If it's already a valid 3-letter ISO code, use it directly
+        if (trimmed.Length == 3 && char.IsLetter(trimmed[0]) && char.IsLetter(trimmed[1]) && char.IsLetter(trimmed[2]))
+        {
+            threeLetter = trimmed.ToLowerInvariant();
+            return true;
+        }
 
         try
         {

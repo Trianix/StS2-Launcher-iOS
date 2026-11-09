@@ -812,9 +812,75 @@ static void PatchMonoModForIos(string monoModPath)
     if (!File.Exists(monoModPath))
         throw new FileNotFoundException("MonoMod.Core.dll not found", monoModPath);
 
+    var dir = Path.GetDirectoryName(monoModPath) ?? ".";
+    var monoModUtilsPath = Path.Combine(dir, "MonoMod.Utils.dll");
+    if (File.Exists(monoModUtilsPath))
+    {
+        var utilsResolver = CreateResolver(monoModUtilsPath);
+        var utilsReader = new ReaderParameters { AssemblyResolver = utilsResolver, ReadWrite = false };
+        var monoModUtils = ModuleDefinition.ReadModule(monoModUtilsPath, utilsReader);
+
+        var platDetectType = monoModUtils.GetType("MonoMod.Utils.PlatformDetection")
+            ?? throw new InvalidOperationException("Could not find MonoMod.Utils.PlatformDetection");
+
+        var detectPosix = platDetectType.Methods.FirstOrDefault(x => x.Name == "DetectInfoPosix");
+        if (detectPosix != null)
+        {
+            var il = detectPosix.Body.GetILProcessor();
+            detectPosix.Body.Instructions.Clear();
+            detectPosix.Body.Variables.Clear();
+            detectPosix.Body.ExceptionHandlers.Clear();
+            detectPosix.Body.InitLocals = false;
+
+            // *os = OSKind.IOS (37); *arch = ArchitectureKind.Arm64 (5); ret;
+            il.Append(il.Create(OpCodes.Ldarg_0));
+            il.Append(il.Create(OpCodes.Ldc_I4_S, (sbyte)37));
+            il.Append(il.Create(OpCodes.Stind_I4));
+            il.Append(il.Create(OpCodes.Ldarg_1));
+            il.Append(il.Create(OpCodes.Ldc_I4_5));
+            il.Append(il.Create(OpCodes.Stind_I4));
+            il.Append(il.Create(OpCodes.Ret));
+            Console.WriteLine("Patched MonoMod.Utils.PlatformDetection.DetectInfoPosix -> OSKind.IOS (37), ArchitectureKind.Arm64 (5)");
+        }
+
+        var detectPlatform = platDetectType.Methods.FirstOrDefault(x => x.Name == "DetectPlatformInfo");
+        if (detectPlatform != null)
+        {
+            var tupleCtor = detectPlatform.Body.Instructions
+                .Where(i => i.OpCode == OpCodes.Newobj && i.Operand is MethodReference mr && mr.DeclaringType.Name.StartsWith("ValueTuple`2"))
+                .Select(i => (MethodReference)i.Operand)
+                .FirstOrDefault();
+
+            if (tupleCtor != null)
+            {
+                var il = detectPlatform.Body.GetILProcessor();
+                detectPlatform.Body.Instructions.Clear();
+                detectPlatform.Body.Variables.Clear();
+                detectPlatform.Body.ExceptionHandlers.Clear();
+                detectPlatform.Body.InitLocals = false;
+
+                il.Append(il.Create(OpCodes.Ldc_I4_S, (sbyte)37));
+                il.Append(il.Create(OpCodes.Ldc_I4_5));
+                il.Append(il.Create(OpCodes.Newobj, tupleCtor));
+                il.Append(il.Create(OpCodes.Ret));
+                Console.WriteLine("Patched MonoMod.Utils.PlatformDetection.DetectPlatformInfo -> (OSKind.IOS, ArchitectureKind.Arm64)");
+            }
+        }
+
+        WriteModuleOverOriginal(monoModUtils, monoModUtilsPath);
+        Console.WriteLine("Successfully wrote patched MonoMod.Utils.dll for iOS: " + monoModUtilsPath);
+    }
+
     var resolver = CreateResolver(monoModPath);
     var reader = new ReaderParameters { AssemblyResolver = resolver, ReadWrite = false };
     var monoMod = ModuleDefinition.ReadModule(monoModPath, reader);
+
+    var internalModule = monoMod.ModuleReferences.FirstOrDefault(m => m.Name == "__Internal");
+    if (internalModule == null)
+    {
+        internalModule = new ModuleReference("__Internal");
+        monoMod.ModuleReferences.Add(internalModule);
+    }
 
     var tripleType = monoMod.GetType("MonoMod.Core.Platforms.PlatformTriple")
         ?? throw new InvalidOperationException("Could not find MonoMod.Core.Platforms.PlatformTriple");
@@ -828,35 +894,31 @@ static void PatchMonoModForIos(string monoModPath)
         mr.DeclaringType.FullName == "MonoMod.Core.Platforms.Systems.AndroidSystem")
         ?? throw new InvalidOperationException("Could not find newobj AndroidSystem in CreateCurrentSystem");
 
-    // 2. Find the instruction that compares OS to 17 (OSKind.IOS) and branches to NotImplementedException
-    Instruction? beqIos = null;
+    // 2. Redirect OSKind.IOS (37) and OSKind.OSX (5) in CreateCurrentSystem to new AndroidSystem()
+    foreach (var inst in createMethod.Body.Instructions)
+    {
+        if (inst.OpCode == OpCodes.Newobj &&
+            inst.Operand is MethodReference mr &&
+            mr.DeclaringType.FullName == "MonoMod.Core.Platforms.Systems.MacOSSystem")
+        {
+            inst.Operand = newobjAndroid.Operand;
+            Console.WriteLine("Patched PlatformTriple.CreateCurrentSystem: replaced MacOSSystem..ctor with AndroidSystem..ctor");
+        }
+    }
+
     for (int i = 0; i < createMethod.Body.Instructions.Count - 1; i++)
     {
         var inst = createMethod.Body.Instructions[i];
-        if ((inst.OpCode == OpCodes.Ldc_I4_S && (sbyte)inst.Operand == 17) ||
-            (inst.OpCode == OpCodes.Ldc_I4 && (int)inst.Operand == 17))
+        if ((inst.OpCode == OpCodes.Ldc_I4_S && ((sbyte)inst.Operand == 37 || (sbyte)inst.Operand == 17)) ||
+            (inst.OpCode == OpCodes.Ldc_I4 && ((int)inst.Operand == 37 || (int)inst.Operand == 17)))
         {
             var next = createMethod.Body.Instructions[i + 1];
             if (next.OpCode == OpCodes.Beq_S || next.OpCode == OpCodes.Beq)
             {
-                if (next.Operand is Instruction target && target.OpCode == OpCodes.Newobj &&
-                    target.Operand is MethodReference tmr && tmr.DeclaringType.FullName == "System.NotImplementedException")
-                {
-                    beqIos = next;
-                    break;
-                }
+                next.Operand = newobjAndroid;
+                Console.WriteLine($"Patched PlatformTriple.CreateCurrentSystem: redirected OSKind {(inst.Operand)} -> new AndroidSystem()");
             }
         }
-    }
-
-    if (beqIos != null)
-    {
-        beqIos.Operand = newobjAndroid;
-        Console.WriteLine("Patched PlatformTriple.CreateCurrentSystem: redirected OSKind.IOS (17) -> new AndroidSystem()");
-    }
-    else
-    {
-        Console.WriteLine("Notice: beq to NotImplementedException for OSKind.IOS not found (may already be patched)");
     }
 
     // 3. Patch FlushInstructionCache P/Invoke in AndroidSystem to __Internal
@@ -866,16 +928,119 @@ static void PatchMonoModForIos(string monoModPath)
         var flushMethod = androidType.Methods.FirstOrDefault(x => x.Name == "FlushInstructionCache");
         if (flushMethod?.PInvokeInfo != null)
         {
-            var internalModule = monoMod.ModuleReferences.FirstOrDefault(m => m.Name == "__Internal");
-            if (internalModule == null)
-            {
-                internalModule = new ModuleReference("__Internal");
-                monoMod.ModuleReferences.Add(internalModule);
-            }
             flushMethod.PInvokeInfo.Module = internalModule;
             Console.WriteLine("Patched AndroidSystem.FlushInstructionCache: P/Invoke module -> __Internal");
         }
     }
+
+    // 4. Patch PlatformTripleDetourFactory/Detour::CreateDetour() to redirect Mono Interpreter method bodies via sts2_ios_interp_detour_method
+    var factoryType = monoMod.GetType("MonoMod.Core.Platforms.PlatformTripleDetourFactory")
+        ?? throw new InvalidOperationException("Could not find PlatformTripleDetourFactory");
+    var detourType = factoryType.NestedTypes.FirstOrDefault(t => t.Name == "Detour")
+        ?? throw new InvalidOperationException("Could not find PlatformTripleDetourFactory/Detour");
+    var detourBaseType = factoryType.NestedTypes.FirstOrDefault(t => t.Name == "DetourBase")
+        ?? throw new InvalidOperationException("Could not find PlatformTripleDetourFactory/DetourBase");
+
+    var interpDetourPInvoke = detourType.Methods.FirstOrDefault(m => m.Name == "sts2_ios_interp_detour_method");
+    if (interpDetourPInvoke == null)
+    {
+        interpDetourPInvoke = new MethodDefinition(
+            "sts2_ios_interp_detour_method",
+            MethodAttributes.Private | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.PInvokeImpl,
+            monoMod.TypeSystem.Void);
+        interpDetourPInvoke.ImplAttributes |= MethodImplAttributes.PreserveSig;
+        interpDetourPInvoke.Parameters.Add(new ParameterDefinition("srcMethod", ParameterAttributes.None, monoMod.TypeSystem.IntPtr));
+        interpDetourPInvoke.Parameters.Add(new ParameterDefinition("dstMethod", ParameterAttributes.None, monoMod.TypeSystem.IntPtr));
+        interpDetourPInvoke.PInvokeInfo = new PInvokeInfo(
+            PInvokeAttributes.NoMangle | PInvokeAttributes.CallConvCdecl,
+            "sts2_ios_interp_detour_method",
+            internalModule);
+        detourType.Methods.Add(interpDetourPInvoke);
+    }
+
+    var monoRuntimeType = monoMod.GetType("MonoMod.Core.Platforms.Runtimes.MonoRuntime")
+        ?? throw new InvalidOperationException("Could not find MonoRuntime");
+    var getValueRef = monoRuntimeType.Methods
+        .SelectMany(m => m.HasBody ? m.Body.Instructions : Enumerable.Empty<Instruction>())
+        .Where(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) &&
+                    i.Operand is MethodReference mr &&
+                    mr.Name == "get_Value" &&
+                    mr.DeclaringType.FullName == "System.RuntimeMethodHandle")
+        .Select(i => (MethodReference)i.Operand)
+        .FirstOrDefault()
+        ?? throw new InvalidOperationException("Could not find RuntimeMethodHandle::get_Value reference in MonoRuntime");
+
+    var createDetourMethod = detourType.Methods.FirstOrDefault(m => m.Name == "CreateDetour")
+        ?? throw new InvalidOperationException("Could not find Detour::CreateDetour");
+
+    var tripleField = detourBaseType.Fields.First(f => f.Name == "Triple");
+    var getRuntimeMethod = tripleType.Methods.First(m => m.Name == "get_Runtime");
+    var getSourceMethod = detourType.Methods.First(m => m.Name == "get_Source");
+    var realTargetField = detourType.Fields.First(f => f.Name == "realTarget");
+    var dstPinField = detourType.Fields.First(f => f.Name == "dstPin");
+
+    var getMethodHandleRef = createDetourMethod.Body.Instructions
+        .Where(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt) &&
+                    i.Operand is MethodReference mr &&
+                    mr.Name == "GetMethodHandle")
+        .Select(i => (MethodReference)i.Operand)
+        .FirstOrDefault()
+        ?? throw new InvalidOperationException("Could not find IRuntime::GetMethodHandle reference in CreateDetour");
+
+    var dstPinStoreIdx = -1;
+    for (int i = 0; i < createDetourMethod.Body.Instructions.Count; i++)
+    {
+        var inst = createDetourMethod.Body.Instructions[i];
+        if (inst.OpCode == OpCodes.Stfld && inst.Operand is FieldReference fr && fr.Name == dstPinField.Name)
+        {
+            dstPinStoreIdx = i;
+            break;
+        }
+    }
+
+    if (dstPinStoreIdx < 0)
+        throw new InvalidOperationException("Could not find stfld dstPin in CreateDetour");
+
+    var rmhVar = createDetourMethod.Body.Variables.First(v => v.VariableType.FullName == "System.RuntimeMethodHandle");
+
+    while (createDetourMethod.Body.Instructions.Count > dstPinStoreIdx + 1)
+    {
+        createDetourMethod.Body.Instructions.RemoveAt(dstPinStoreIdx + 1);
+    }
+
+    var cil = createDetourMethod.Body.GetILProcessor();
+    // loc.0 = this.Triple.Runtime.GetMethodHandle(this.Source).Value
+    cil.Append(cil.Create(OpCodes.Ldarg_0));
+    cil.Append(cil.Create(OpCodes.Ldfld, tripleField));
+    cil.Append(cil.Create(OpCodes.Callvirt, getRuntimeMethod));
+    cil.Append(cil.Create(OpCodes.Ldarg_0));
+    cil.Append(cil.Create(OpCodes.Call, getSourceMethod));
+    cil.Append(cil.Create(OpCodes.Callvirt, getMethodHandleRef));
+    cil.Append(cil.Create(OpCodes.Stloc_S, rmhVar));
+    cil.Append(cil.Create(OpCodes.Ldloca_S, rmhVar));
+    cil.Append(cil.Create(OpCodes.Call, getValueRef));
+    cil.Append(cil.Create(OpCodes.Stloc_0));
+
+    // loc.1 = this.Triple.Runtime.GetMethodHandle(this.realTarget).Value
+    cil.Append(cil.Create(OpCodes.Ldarg_0));
+    cil.Append(cil.Create(OpCodes.Ldfld, tripleField));
+    cil.Append(cil.Create(OpCodes.Callvirt, getRuntimeMethod));
+    cil.Append(cil.Create(OpCodes.Ldarg_0));
+    cil.Append(cil.Create(OpCodes.Ldfld, realTargetField));
+    cil.Append(cil.Create(OpCodes.Callvirt, getMethodHandleRef));
+    cil.Append(cil.Create(OpCodes.Stloc_S, rmhVar));
+    cil.Append(cil.Create(OpCodes.Ldloca_S, rmhVar));
+    cil.Append(cil.Create(OpCodes.Call, getValueRef));
+    cil.Append(cil.Create(OpCodes.Stloc_1));
+
+    // sts2_ios_interp_detour_method(loc.0, loc.1); return null;
+    cil.Append(cil.Create(OpCodes.Ldloc_0));
+    cil.Append(cil.Create(OpCodes.Ldloc_1));
+    cil.Append(cil.Create(OpCodes.Call, interpDetourPInvoke));
+    cil.Append(cil.Create(OpCodes.Ldnull));
+    cil.Append(cil.Create(OpCodes.Ret));
+
+    Console.WriteLine("Patched PlatformTripleDetourFactory/Detour::CreateDetour -> sts2_ios_interp_detour_method");
 
     WriteModuleOverOriginal(monoMod, monoModPath);
     Console.WriteLine("Successfully wrote patched MonoMod.Core.dll for iOS: " + monoModPath);

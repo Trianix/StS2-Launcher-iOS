@@ -186,7 +186,11 @@ fi
 
 echo "Patching SteamKit2 for iOS..."
 dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-ios "$MANAGED_PUBLISH/SteamKit2.dll"
-if [ -f "$MANAGED_PUBLISH/MonoMod.Core.dll" ]; then
+if [ -f "$IOS_BUNDLE_BCL_DIR/MonoMod.Core.dll" ]; then
+    echo "Patching MonoMod for iOS..."
+    dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$IOS_BUNDLE_BCL_DIR/MonoMod.Core.dll"
+elif [ -f "$MANAGED_PUBLISH/MonoMod.Core.dll" ]; then
+    echo "Patching MonoMod for iOS..."
     dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$MANAGED_PUBLISH/MonoMod.Core.dll"
 fi
 
@@ -206,11 +210,13 @@ for dll in SteamKit2.dll protobuf-net.dll protobuf-net.Core.dll System.IO.Hashin
     if [ -f "$MANAGED_PUBLISH/$dll" ]; then
         cp -f "$MANAGED_PUBLISH/$dll" "$ASSEMBLIES_DIR/"
         cp -f "$MANAGED_PUBLISH/$dll" "$IOS_BUNDLE_BCL_DIR/"
+    elif [ -f "$IOS_BUNDLE_BCL_DIR/$dll" ]; then
+        cp -f "$IOS_BUNDLE_BCL_DIR/$dll" "$ASSEMBLIES_DIR/"
     elif [ -f "$IOS_BCL_ASSETS_DIR/$dll" ]; then
         cp -f "$IOS_BCL_ASSETS_DIR/$dll" "$ASSEMBLIES_DIR/"
     fi
 done
-cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
+cp -f "$IOS_BUNDLE_BCL_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
 # Stage metadata-only reference sts2.dll into dotnet_bcl so initial launcher boot can resolve types before any game branch is downloaded.
 # Never place sts2.dll in assemblies/ so IOSAssemblyBootstrapper will not overwrite a staged runtime-pack sts2.dll.
 if [ -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" ]; then

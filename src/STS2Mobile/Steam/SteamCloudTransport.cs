@@ -457,7 +457,7 @@ internal sealed class SteamCloudTransport : ISaveRemote
             );
             request.Content.Headers.ContentLength = body.Length;
             foreach (var header in block.request_headers)
-                request.Headers.TryAddWithoutValidation(header.name, header.value);
+                if (!request.Headers.TryAddWithoutValidation(header.name, header.value)) request.Content.Headers.TryAddWithoutValidation(header.name, header.value);
             await SendHttpAsync(request, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -712,7 +712,7 @@ internal sealed class SteamCloudTransport : ISaveRemote
         catch (Exception ex)
         {
             PatchHelper.Log(
-                $"[Cloud] Steam connection discard failed: {ex.GetType().Name}"
+                $"[Cloud] Steam connection discard failed: {ex.GetType().Name}: {ex.Message}"
             );
         }
     }

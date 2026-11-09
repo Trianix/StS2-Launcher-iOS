@@ -107,7 +107,7 @@ internal static class PatchHelper
         }
         catch (Exception ex)
         {
-            Log($"FAILED {label}: {ex.Message}");
+            Log($"FAILED {label}: {ex}");
         }
     }
 

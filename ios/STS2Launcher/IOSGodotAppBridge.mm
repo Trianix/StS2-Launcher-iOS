@@ -240,4 +240,113 @@ IOS_BRIDGE_EXPORT int* __errno_location(void) {
     return __error();
 }
 
+struct Sts2InterpMethod {
+    void *method;
+    Sts2InterpMethod *next_jit_code_hash;
+    unsigned short *code;
+    void *func;
+    void *clauses;
+    void **data_items;
+    uint32_t *local_offsets;
+    uint32_t *arg_offsets;
+    uint32_t *clause_data_offsets;
+    void *jit_call_info;
+    void *jit_entry;
+    void *llvmonly_unbox_entry;
+    void *rtype;
+    void **param_types;
+    void *jinfo;
+    void *ftndesc;
+    void *ftndesc_unbox;
+    void *del_info;
+    uint32_t locals_size;
+    uint32_t alloca_size;
+    int num_clauses;
+    int transformed;
+    unsigned int param_count;
+    unsigned int hasthis;
+    uint32_t prof_flags;
+    uint32_t code_type;
+    int ref_slot_offset;
+    int swift_error_offset;
+    void *ref_slots;
+    int32_t entry_count;
+    Sts2InterpMethod *optimized_imethod;
+    int *patchpoint_data;
+    unsigned int init_locals : 1;
+    unsigned int vararg : 1;
+    unsigned int optimized : 1;
+    unsigned int needs_thread_attach : 1;
+    unsigned int is_invoke : 1;
+    unsigned int is_verbose : 1;
+};
+
+extern Sts2InterpMethod* mono_interp_get_imethod(void *method);
+extern void* mono_compile_method(void *method);
+extern char* mono_method_full_name(void *method, int signature);
+
+static void sts2_copy_interp_body(Sts2InterpMethod *dst_target, Sts2InterpMethod *src_body) {
+    dst_target->code = src_body->code;
+    dst_target->func = src_body->func;
+    dst_target->clauses = src_body->clauses;
+    dst_target->data_items = src_body->data_items;
+    dst_target->local_offsets = src_body->local_offsets;
+    dst_target->clause_data_offsets = src_body->clause_data_offsets;
+    dst_target->jinfo = src_body->jinfo;
+    dst_target->locals_size = src_body->locals_size;
+    dst_target->alloca_size = src_body->alloca_size;
+    dst_target->num_clauses = src_body->num_clauses;
+    dst_target->prof_flags = src_body->prof_flags;
+    dst_target->code_type = src_body->code_type;
+    dst_target->ref_slot_offset = src_body->ref_slot_offset;
+    dst_target->swift_error_offset = src_body->swift_error_offset;
+    dst_target->ref_slots = src_body->ref_slots;
+    dst_target->entry_count = 0;
+    dst_target->optimized_imethod = nullptr;
+    dst_target->patchpoint_data = nullptr;
+    dst_target->init_locals = src_body->init_locals;
+    dst_target->optimized = 1;
+    dst_target->needs_thread_attach = src_body->needs_thread_attach;
+    __sync_synchronize();
+    dst_target->transformed = 1;
+}
+
+IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void *dst_mono_method) {
+    if (!src_mono_method || !dst_mono_method) {
+        return;
+    }
+
+    Sts2InterpMethod *src_imethod = mono_interp_get_imethod(src_mono_method);
+    Sts2InterpMethod *dst_imethod = mono_interp_get_imethod(dst_mono_method);
+    if (!src_imethod || !dst_imethod) {
+        return;
+    }
+
+    // Mark both as optimized before transforming dst_mono_method so tiering opcodes
+    // (MINT_TIER_ENTER_METHOD / MINT_TIER_PATCHPOINT) are omitted and never re-transform src_imethod.
+    dst_imethod->optimized = 1;
+    src_imethod->optimized = 1;
+
+    if (!dst_imethod->transformed) {
+        mono_compile_method(dst_mono_method);
+    }
+
+    Sts2InterpMethod *compiled_dst = dst_imethod->optimized_imethod ? dst_imethod->optimized_imethod : dst_imethod;
+    if (!compiled_dst->transformed || !compiled_dst->code) {
+        char *src_name = mono_method_full_name(src_mono_method, 1);
+        char *dst_name = mono_method_full_name(dst_mono_method, 1);
+        NSLog(@"[STS2Launcher iOS] Failed to transform detour target %s -> %s",
+              src_name ? src_name : "<null>",
+              dst_name ? dst_name : "<null>");
+        if (src_name) free(src_name);
+        if (dst_name) free(dst_name);
+        return;
+    }
+
+    if (src_imethod->optimized_imethod) {
+        sts2_copy_interp_body(src_imethod->optimized_imethod, compiled_dst);
+    }
+    sts2_copy_interp_body(src_imethod, compiled_dst);
+}
+
 }

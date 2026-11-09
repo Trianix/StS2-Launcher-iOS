@@ -792,10 +792,10 @@ internal sealed class SaveSyncService
         {
             ResetTransport();
             PatchHelper.Log(
-                $"[Cloud] Save synchronization failed: {ex.GetType().Name}"
+                $"[Cloud] Save synchronization failed: {ex.GetType().Name}: {ex.Message}"
             );
             return await FailedAsync(
-                ex.GetType().Name,
+                $"{ex.GetType().Name}: {ex.Message}",
                 FailureKindFor(ex)
             ).ConfigureAwait(false);
         }
@@ -1608,6 +1608,11 @@ internal sealed class SaveSyncService
             or "game"
             or "mods"
             or "tmp"
+            or "default"
+            or "logs"
+            or "shader_cache"
+            or "sts2launcher"
+            or "vulkan"
             or "workshop_mods";
     }
 

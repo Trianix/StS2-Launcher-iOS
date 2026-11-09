@@ -141,12 +141,6 @@ IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path,
         NSLog(@"[STS2Launcher iOS] Error creating launch marker JSON: %@", jsonError);
     }
     
-    // Fallback timer: guaranteed clean exit after 1.0s even if notifications are blocked or fail
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSLog(@"[STS2Launcher iOS] Launch handoff complete; terminating launcher for game boot.");
-        _exit(0);
-    });
-    
     // 2. Schedule local notification to alert the user that the game is ready
     if (@available(iOS 10.0, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -164,6 +158,49 @@ IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path,
             }
         }];
     }
+
+    // 3. Present confirmation alert on main thread so user understands why launcher exits and knows to reopen the app
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *keyWin = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                    for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                        if (w.isKeyWindow) { keyWin = w; break; }
+                    }
+                }
+            }
+        }
+        if (!keyWin) {
+            keyWin = [UIApplication sharedApplication].keyWindow;
+        }
+        
+        UIViewController *rootVC = keyWin.rootViewController;
+        if (rootVC) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Game Files Ready"
+                                                                           message:@"Preparation complete! Please tap Exit, then tap the Slay the Spire 2 app icon on your home screen to start the game."
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Exit to Home Screen"
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction * _Nonnull action) {
+                NSLog(@"[STS2Launcher iOS] User acknowledged game handoff; exiting launcher for game boot.");
+                _exit(0);
+            }]];
+            [rootVC presentViewController:alert animated:YES completion:nil];
+            
+            // Safety timer: auto-exit after 30s if user ignores the dialog
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                NSLog(@"[STS2Launcher iOS] Safety timeout reached; terminating launcher for game boot.");
+                _exit(0);
+            });
+        } else {
+            // Fallback if no view controller is visible
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                NSLog(@"[STS2Launcher iOS] Launch handoff complete; terminating launcher for game boot.");
+                _exit(0);
+            });
+        }
+    });
 }
 
 IOS_BRIDGE_EXPORT bool ios_get_or_create_device_key(uint8_t *key_out, int key_len) {

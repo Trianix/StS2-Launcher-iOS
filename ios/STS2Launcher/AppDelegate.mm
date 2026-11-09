@@ -266,22 +266,25 @@ extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debug
         return true;
     }
 
-    // Only run the active executable probe if a debugger is attached (P_TRACED=1),
-    // or once on startup to record baseline capabilities in the log.
-    static bool sRanInitialProbe = false;
-    if (traced != 0 || !sRanInitialProbe) {
-        sRanInitialProbe = true;
-        bool jitWorking = sts2_run_jit_probe();
-        if (jitWorking) {
-            setenv("STS2_MONO_JIT", "1", 1);
-            unsetenv("STS2_MONO_FORCE_INTERP");
-            sJitConfirmed = true;
-            NSLog(@"[STS2Launcher iOS] JIT confirmed working (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
-            return true;
+    // CRITICAL: NEVER run an executable memory probe if no debugger is attached (traced == 0).
+    // On iOS without CS_DEBUGGED/debugger, executing an unsigned mmap page causes AMFI to instantly
+    // terminate the process with an uncatchable SIGKILL (Codesigning violation).
+    if (traced != 0) {
+        static bool sRanInitialProbe = false;
+        if (!sRanInitialProbe) {
+            sRanInitialProbe = true;
+            bool jitWorking = sts2_run_jit_probe();
+            if (jitWorking) {
+                setenv("STS2_MONO_JIT", "1", 1);
+                unsetenv("STS2_MONO_FORCE_INTERP");
+                sJitConfirmed = true;
+                NSLog(@"[STS2Launcher iOS] JIT confirmed working (P_TRACED=%d, CS_DEBUGGED=%d); STS2_MONO_JIT=1 enabled", traced, cs_debugged);
+                return true;
+            }
         }
     }
 
-    // JIT is not available; ensure Mono runs in Interpreter mode
+    // JIT is not available or not permitted; ensure Mono runs safely in Interpreter mode
     unsetenv("STS2_MONO_JIT");
     setenv("STS2_MONO_FORCE_INTERP", "1", 1);
     return false;
@@ -296,6 +299,7 @@ static NSArray *sts2_determine_active_godot_cmdline() {
         NSString *launchMarkerPath = [userData stringByAppendingPathComponent:@"pending_game_launch.json"];
         NSFileManager *fm = [NSFileManager defaultManager];
         
+        // 1. Check for pending game launch marker written by standalone launcher
         if ([fm fileExistsAtPath:launchMarkerPath]) {
             NSData *data = [NSData dataWithContentsOfFile:launchMarkerPath];
             if (data) {
@@ -321,24 +325,39 @@ static NSArray *sts2_determine_active_godot_cmdline() {
             }
         }
         
-        // If no pending launch marker, check if a downloaded game PCK is already installed
-        NSString *branchFile = [userData stringByAppendingPathComponent:@"game_branch"];
-        NSString *branch = @"public";
-        if ([fm fileExistsAtPath:branchFile]) {
-            NSString *fileContent = [NSString stringWithContentsOfFile:branchFile encoding:NSUTF8StringEncoding error:nil];
-            if (fileContent) {
-                NSString *trimmed = [fileContent stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                if (trimmed.length > 0) {
-                    branch = trimmed;
+        // 2. If no pending launch marker, check current_runtime_slot.json for an authorized playable PCK
+        NSString *runtimeSlotPath = [userData stringByAppendingPathComponent:@"current_runtime_slot.json"];
+        if ([fm fileExistsAtPath:runtimeSlotPath]) {
+            NSData *slotData = [NSData dataWithContentsOfFile:runtimeSlotPath];
+            if (slotData) {
+                NSDictionary *slotDict = [NSJSONSerialization JSONObjectWithData:slotData options:0 error:nil];
+                if (slotDict && [slotDict[@"playable"] boolValue]) {
+                    NSString *pckPath = slotDict[@"pckPath"];
+                    if (pckPath && [fm fileExistsAtPath:pckPath]) {
+                        NSLog(@"[STS2Launcher iOS] Found authorized runtime slot PCK at: %@; booting game directly.", pckPath);
+                        setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+                        setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+                        setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
+                        sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
+                        return;
+                    }
                 }
             }
         }
         
+        // 3. Fallback check for installed game PCK on disk:
+        //    a) Legacy public: ~/game/SlayTheSpire2.pck
+        //    b) Branch cache: ~/game_versions/*/game/SlayTheSpire2.pck
         NSString *installedGamePck = [userData stringByAppendingPathComponent:@"game/SlayTheSpire2.pck"];
-        if (![branch isEqualToString:@"public"]) {
-            NSString *branchPck = [userData stringByAppendingPathComponent:[NSString stringWithFormat:@"game_versions/%@/SlayTheSpire2.pck", branch]];
-            if ([fm fileExistsAtPath:branchPck]) {
-                installedGamePck = branchPck;
+        if (![fm fileExistsAtPath:installedGamePck]) {
+            NSString *versionsDir = [userData stringByAppendingPathComponent:@"game_versions"];
+            NSArray *versionDirs = [fm contentsOfDirectoryAtPath:versionsDir error:nil];
+            for (NSString *subDir in versionDirs) {
+                NSString *candidate = [versionsDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@/game/SlayTheSpire2.pck", subDir]];
+                if ([fm fileExistsAtPath:candidate]) {
+                    installedGamePck = candidate;
+                    break;
+                }
             }
         }
         
@@ -416,10 +435,19 @@ static AppDelegate *sSharedDelegate = nil;
 }
 
 + (void)load {
-    // 1. Redirect stdout and stderr to Documents/app_output.log using shared fd so lines don't overwrite each other
+    // 1. Redirect stdout and stderr to Documents/app_output.log using shared fd so lines don't overwrite each other.
+    // Rotate current log to app_output_prev.log so historical handoff/crash logs are preserved across app relaunches.
     NSArray *docPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (docPaths.count > 0) {
+        NSFileManager *fm = [NSFileManager defaultManager];
         NSString *logPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output.log"];
+        NSString *prevLogPath = [docPaths.firstObject stringByAppendingPathComponent:@"app_output_prev.log"];
+        
+        if ([fm fileExistsAtPath:logPath]) {
+            [fm removeItemAtPath:prevLogPath error:nil];
+            [fm moveItemAtPath:logPath toPath:prevLogPath error:nil];
+        }
+        
         int logFd = open([logPath UTF8String], O_WRONLY | O_CREAT | O_TRUNC | O_APPEND, 0644);
         if (logFd >= 0) {
             dup2(logFd, STDOUT_FILENO);
@@ -434,6 +462,8 @@ static AppDelegate *sSharedDelegate = nil;
     sts2_install_crash_handlers();
     sts2_install_mono_log_hooks();
     setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 0);
+    setenv("STS2_SKIP_JIT_WAIT", "1", 1);
+    setenv("STS2_MONO_FORCE_INTERP", "1", 1);
     NSLog(@"[STS2Launcher iOS] Logging & crash signal handlers initialized (PID=%d); stdout/stderr -> Documents/app_output.log", getpid());
 
     // 2. Change current working directory to bundle root so relative resource lookups succeed

@@ -175,6 +175,14 @@ cp -R "$SPINE_EXTRACT_DIR/bin/ios/libspine_godot.ios.template_release.framework"
 echo "Publishing STS2Mobile managed assembly..."
 dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release
 
+MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0/publish"
+if [ ! -d "$MANAGED_PUBLISH" ]; then
+    MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0"
+fi
+
+echo "Patching SteamKit2 for iOS..."
+dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-ios "$MANAGED_PUBLISH/SteamKit2.dll"
+
 # 2. Generate Bootstrap PCK
 echo "Generating bootstrap.pck..."
 python3 "$ROOT/scripts/make-bootstrap-pck.py" "$IOS_DIR/STS2Launcher/bootstrap.pck"
@@ -183,11 +191,6 @@ cp -f "$IOS_DIR/STS2Launcher/bootstrap.pck" "$IOS_DIR/STS2Launcher/STS2Launcher.
 # 3. Stage Managed Assemblies into App Bundle Resources
 ASSEMBLIES_DIR="$IOS_DIR/STS2Launcher/assemblies"
 mkdir -p "$ASSEMBLIES_DIR"
-
-MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0/publish"
-if [ ! -d "$MANAGED_PUBLISH" ]; then
-    MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0"
-fi
 
 cp -f "$MANAGED_PUBLISH/STS2Mobile.dll" "$ASSEMBLIES_DIR/"
 cp -f "$MANAGED_PUBLISH/STS2Mobile.dll" "$IOS_BUNDLE_BCL_DIR/"

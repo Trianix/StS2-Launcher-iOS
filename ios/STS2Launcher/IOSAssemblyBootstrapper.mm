@@ -101,7 +101,8 @@
                     // If source is newer or different, replace it
                     NSDictionary *srcAttr = [fm attributesOfItemAtPath:srcFile error:nil];
                     NSDictionary *dstAttr = [fm attributesOfItemAtPath:dstFile error:nil];
-                    if (![srcAttr[NSFileSize] isEqualToNumber:dstAttr[NSFileSize]]) {
+                    if (![srcAttr[NSFileSize] isEqualToNumber:dstAttr[NSFileSize]] ||
+                        [srcAttr[NSFileModificationDate] compare:dstAttr[NSFileModificationDate]] == NSOrderedDescending) {
                         [fm removeItemAtPath:dstFile error:nil];
                         [fm copyItemAtPath:srcFile toPath:dstFile error:nil];
                     }

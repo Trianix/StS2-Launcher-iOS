@@ -8,9 +8,16 @@ if (args.Length == 2 && args[0] == "--verify-apk")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--patch-ios")
+{
+    PatchSteamKitForIos(args[1]);
+    return;
+}
+
 if (args.Length < 2 || args.Length > 3)
 {
     Console.Error.WriteLine("Usage: SteamKitPatch <SteamKit2.dll> <STS2Mobile.dll> [sts2.dll]");
+    Console.Error.WriteLine("       SteamKitPatch --patch-ios <SteamKit2.dll>");
     Console.Error.WriteLine("       SteamKitPatch --verify-apk <apk>");
     Environment.Exit(2);
 }
@@ -35,6 +42,7 @@ AssertRequiredCryptoPatches(cryptoPatchCounts);
 AssertNoForbiddenCryptoCallsites(steamKit);
 AssertPatchedHelperCallsites(steamKit, cryptoPatchRules, cryptoPatchCounts);
 AssertReferencesHelperAssembly(steamKit, helperType);
+PatchProcessStartTime(steamKit);
 
 WriteModuleOverOriginal(steamKit, steamKitPath);
 Console.WriteLine(FormatCryptoPatchSummary(cryptoPatchCounts));
@@ -775,6 +783,116 @@ static void PatchGamePlatformUtil(string gamePath, IAssemblyResolver resolver)
 
     WriteModuleOverOriginal(game, gamePath);
     Console.WriteLine("Patched sts2.dll PlatformUtil: NullPlatformUtilStrategy constructor no-op, static constructor uses NullPlatformUtilStrategy, PrimaryPlatform=None, GetPlatformUtil returns _null");
+}
+
+static void PatchSteamKitForIos(string steamKitPath)
+{
+    if (!File.Exists(steamKitPath))
+        throw new FileNotFoundException("SteamKit2.dll not found", steamKitPath);
+
+    var resolver = CreateResolver(steamKitPath);
+    var reader = new ReaderParameters { AssemblyResolver = resolver, ReadWrite = false };
+    var steamKit = ModuleDefinition.ReadModule(steamKitPath, reader);
+
+    PatchProcessStartTime(steamKit);
+
+    WriteModuleOverOriginal(steamKit, steamKitPath);
+    Console.WriteLine("Patched SteamKit2.dll for iOS: replaced Process.GetCurrentProcess().StartTime with DateTime.UtcNow; removed System.Diagnostics.Process reference");
+}
+
+static void PatchProcessStartTime(ModuleDefinition steamKit)
+{
+    var clientType = steamKit.GetType("SteamKit2.SteamClient")
+        ?? throw new InvalidOperationException("Could not find SteamKit2.SteamClient in " + steamKit.Name);
+
+    var ctor = clientType.Methods.FirstOrDefault(m =>
+        m.IsConstructor && !m.IsStatic && m.HasBody &&
+        m.Body.Instructions.Any(i => i.OpCode == OpCodes.Call && i.Operand is MethodReference mr &&
+            mr.DeclaringType.FullName == "System.Diagnostics.Process" && mr.Name == "GetCurrentProcess"))
+        ?? throw new InvalidOperationException("Could not find SteamClient constructor calling Process.GetCurrentProcess");
+
+    var processStartTimeField = clientType.Fields.FirstOrDefault(f => f.Name == "processStartTime")
+        ?? throw new InvalidOperationException("Could not find SteamClient.processStartTime field");
+
+    var dateTimeType = processStartTimeField.FieldType;
+    var utcNowMethod = new MethodReference("get_UtcNow", dateTimeType, dateTimeType)
+    {
+        HasThis = false,
+        ExplicitThis = false,
+        CallingConvention = MethodCallingConvention.Default
+    };
+
+    var il = ctor.Body.GetILProcessor();
+    var instructions = ctor.Body.Instructions;
+
+    Instruction? getCurrentProcessInst = null;
+    Instruction? leaveInst = null;
+
+    foreach (var inst in instructions)
+    {
+        if (inst.OpCode == OpCodes.Call && inst.Operand is MethodReference mr &&
+            mr.DeclaringType.FullName == "System.Diagnostics.Process" && mr.Name == "GetCurrentProcess")
+        {
+            getCurrentProcessInst = inst;
+        }
+        else if (getCurrentProcessInst != null && leaveInst == null &&
+            (inst.OpCode == OpCodes.Leave || inst.OpCode == OpCodes.Leave_S))
+        {
+            leaveInst = inst;
+            break;
+        }
+    }
+
+    if (getCurrentProcessInst == null || leaveInst == null || leaveInst.Operand is not Instruction targetInst)
+    {
+        throw new InvalidOperationException("Could not locate Process.GetCurrentProcess / leave instruction sequence in SteamClient constructor");
+    }
+
+    var ldarg0 = il.Create(OpCodes.Ldarg_0);
+    var callUtcNow = il.Create(OpCodes.Call, utcNowMethod);
+    var stfld = il.Create(OpCodes.Stfld, processStartTimeField);
+
+    il.InsertBefore(getCurrentProcessInst, ldarg0);
+    il.InsertBefore(getCurrentProcessInst, callUtcNow);
+    il.InsertBefore(getCurrentProcessInst, stfld);
+
+    while (instructions.IndexOf(targetInst) > instructions.IndexOf(stfld) + 1)
+    {
+        var toRemove = instructions[instructions.IndexOf(stfld) + 1];
+        il.Remove(toRemove);
+    }
+
+    ctor.Body.ExceptionHandlers.Clear();
+
+    var processAssemblyRef = steamKit.AssemblyReferences.FirstOrDefault(r => r.Name == "System.Diagnostics.Process");
+    if (processAssemblyRef != null)
+    {
+        steamKit.AssemblyReferences.Remove(processAssemblyRef);
+    }
+
+    AssertNoProcessCalls(steamKit);
+}
+
+static void AssertNoProcessCalls(ModuleDefinition module)
+{
+    foreach (var type in module.Types.SelectMany(WalkTypes))
+    {
+        foreach (var method in type.Methods)
+        {
+            if (!method.HasBody)
+                continue;
+
+            foreach (var inst in method.Body.Instructions)
+            {
+                if (inst.Operand is MethodReference mr &&
+                    mr.DeclaringType.FullName == "System.Diagnostics.Process")
+                {
+                    throw new InvalidOperationException(
+                        $"Forbidden System.Diagnostics.Process callsite remains in {module.Name}: {type.FullName}::{method.Name} -> {mr.FullName}");
+                }
+            }
+        }
+    }
 }
 
 static void ReplaceBody(MethodDefinition method, Action<ILProcessor> emit)

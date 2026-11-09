@@ -12,6 +12,29 @@ namespace STS2Mobile.Patches;
 // Installs Harmony hooks for the mobile launcher and mobile startup behavior.
 internal static class LauncherPatches
 {
+    private sealed class GameplaySaveStoreAdapter(AndroidLocalSaveStore inner) : ISaveStore
+    {
+        public string ReadFile(string path) => inner.ReadFile(path);
+        public Task<string> ReadFileAsync(string path) => inner.ReadFileAsync(path);
+        public void WriteFile(string path, string content) => inner.WriteFile(path, content);
+        public void WriteFile(string path, byte[] bytes) => inner.WriteFile(path, bytes);
+        public Task WriteFileAsync(string path, string content) => inner.WriteFileAsync(path, content);
+        public Task WriteFileAsync(string path, byte[] bytes) => inner.WriteFileAsync(path, bytes);
+        public bool FileExists(string path) => inner.FileExists(path);
+        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
+        public void DeleteFile(string path) => inner.DeleteFile(path);
+        public void RenameFile(string sourcePath, string destinationPath) => inner.RenameFile(sourcePath, destinationPath);
+        public string[] GetFilesInDirectory(string directoryPath) => inner.GetFilesInDirectory(directoryPath);
+        public string[] GetDirectoriesInDirectory(string directoryPath) => inner.GetDirectoriesInDirectory(directoryPath);
+        public void CreateDirectory(string directoryPath) => inner.CreateDirectory(directoryPath);
+        public void DeleteDirectory(string directoryPath) => inner.DeleteDirectory(directoryPath);
+        public void DeleteTemporaryFiles(string directoryPath) => inner.DeleteTemporaryFiles(directoryPath);
+        public DateTimeOffset GetLastModifiedTime(string path) => inner.GetLastModifiedTime(path);
+        public int GetFileSize(string path) => inner.GetFileSize(path);
+        public void SetLastModifiedTime(string path, DateTimeOffset time) => inner.SetLastModifiedTime(path, time);
+        public string GetFullPath(string filename) => inner.GetFullPath(filename);
+    }
+
     internal static void Apply(Harmony harmony)
     {
         ApplyGamePatches(harmony);
@@ -81,8 +104,10 @@ internal static class LauncherPatches
         var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
         PatchHelper.Log($"[Save] Constructing {platform} gameplay SaveManager");
         __result = new SaveManager(
-            new AndroidLocalSaveStore(
-                SaveSyncService.NotifyGameplayMutationCommitted
+            new GameplaySaveStoreAdapter(
+                new AndroidLocalSaveStore(
+                    SaveSyncService.NotifyGameplayMutationCommitted
+                )
             )
         );
         return false;

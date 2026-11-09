@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace STS2Mobile.Steam;
 
@@ -170,7 +169,6 @@ internal sealed class SaveSyncService
     private static SaveSyncService _active;
 
     private readonly AndroidLocalSaveStore _local;
-    private readonly ISaveStore _localStore;
     private string _statePath;
     private string _statusPath;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
@@ -205,7 +203,6 @@ internal sealed class SaveSyncService
     )
     {
         _local = local;
-        _localStore = local;
         _accountName = accountName ?? string.Empty;
         _refreshToken = refreshToken ?? string.Empty;
         _transportFactory = transportFactory;
@@ -1105,7 +1102,7 @@ internal sealed class SaveSyncService
                 continue;
 
             localMutationStarted = true;
-            _localStore.WriteFile(file.Entry.Path, file.Bytes);
+            _local.WriteFile(file.Entry.Path, file.Bytes);
             changed++;
         }
 
@@ -1120,7 +1117,7 @@ internal sealed class SaveSyncService
             if (remote.Files.ContainsKey(localPath))
                 continue;
             localMutationStarted = true;
-            _localStore.DeleteFile(localPath);
+            _local.DeleteFile(localPath);
             changed++;
         }
         return changed;
@@ -1166,14 +1163,14 @@ internal sealed class SaveSyncService
                     StringComparer.Ordinal
                 )
             )
-                _localStore.WriteFile(file.Entry.Path, file.Bytes);
+                _local.WriteFile(file.Entry.Path, file.Bytes);
 
             foreach (
                 var remoteOnlyPath in remote.Files.Keys
                     .Where(path => !local.Files.ContainsKey(path))
                     .OrderBy(path => path, StringComparer.Ordinal)
             )
-                _localStore.DeleteFile(remoteOnlyPath);
+                _local.DeleteFile(remoteOnlyPath);
         }
         catch (Exception rollbackFailure)
         {
@@ -1551,7 +1548,7 @@ internal sealed class SaveSyncService
         HashSet<string> paths
     )
     {
-        foreach (var file in _localStore.GetFilesInDirectory(directory))
+        foreach (var file in _local.GetFilesInDirectory(directory))
         {
             var path = CombinePath(directory, file);
             if (!TryGetManagedSavePath(path, out var canonical))
@@ -1564,7 +1561,7 @@ internal sealed class SaveSyncService
             paths.Add(canonical);
         }
 
-        foreach (var child in _localStore.GetDirectoriesInDirectory(directory))
+        foreach (var child in _local.GetDirectoriesInDirectory(directory))
         {
             var childPath = CombinePath(directory, child);
             if (ShouldIgnoreDirectory(childPath))

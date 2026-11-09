@@ -90,7 +90,7 @@ internal sealed partial class LauncherView
         if (ev is InputEventMouseButton { Pressed: true } or InputEventScreenTouch { Pressed: true })
         {
             _parent.GetViewport()?.GuiReleaseFocus();
-            if (OperatingSystem.IsAndroid())
+            if (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS())
             {
                 try
                 {
@@ -98,10 +98,11 @@ internal sealed partial class LauncherView
                 }
                 catch
                 {
-                // Some Android backends may already have removed the IME connection.
+                // Some mobile backends may already have removed the IME connection.
                 }
 
-                AndroidGodotAppBridge.NotifyLauncherTextEditingRequested(false);
+                if (OperatingSystem.IsAndroid())
+                    AndroidGodotAppBridge.NotifyLauncherTextEditingRequested(false);
             }
         }
     }

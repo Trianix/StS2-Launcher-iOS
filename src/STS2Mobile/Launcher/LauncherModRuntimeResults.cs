@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using MegaCrit.Sts2.Core.Localization;
 using STS2Mobile.Steam;
 
 namespace STS2Mobile.Launcher;
@@ -127,13 +126,7 @@ internal sealed class LauncherModNativeError
     public string LocTable { get; set; } = "";
     public string LocEntryKey { get; set; } = "";
     public Dictionary<string, object> Variables { get; set; } = new();
-    internal static LauncherModNativeError From(LocString value) => new()
-    {
-        LocTable = value.LocTable,
-        LocEntryKey = value.LocEntryKey,
-        Variables = value.Variables.ToDictionary(pair => pair.Key, pair => DiagnosticValue(pair.Value)),
-    };
-    private static object DiagnosticValue(object value) => value switch
+    internal static object DiagnosticValue(object value) => value switch
     {
         null or string or bool or byte or short or int or long or ushort or uint or ulong or float or double or decimal => value,
         IEnumerable items => items.Cast<object>().Select(DiagnosticValue).ToArray(),

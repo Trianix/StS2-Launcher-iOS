@@ -6,6 +6,8 @@ namespace STS2Mobile;
 internal static class IOSGodotAppBridge
 {
     private const string NativeLib = "__Internal";
+    private static string _cachedDocumentsDir;
+    private static string _cachedUserDataDir;
 
     [DllImport(NativeLib, EntryPoint = "ios_share_text_file")]
     [return: MarshalAs(UnmanagedType.I1)]
@@ -88,10 +90,13 @@ internal static class IOSGodotAppBridge
     internal static string GetDocumentsDir()
     {
         if (!OperatingSystem.IsIOS()) return string.Empty;
+        if (!string.IsNullOrEmpty(_cachedDocumentsDir)) return _cachedDocumentsDir;
         try
         {
             var ptr = NativeGetDocumentsDir();
             var res = ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            if (!string.IsNullOrEmpty(res))
+                _cachedDocumentsDir = res;
             PatchHelper.Log($"[IOSBridge] GetDocumentsDir: {res}");
             return res ?? string.Empty;
         }
@@ -105,10 +110,13 @@ internal static class IOSGodotAppBridge
     internal static string GetUserDataDir()
     {
         if (!OperatingSystem.IsIOS()) return string.Empty;
+        if (!string.IsNullOrEmpty(_cachedUserDataDir)) return _cachedUserDataDir;
         try
         {
             var ptr = NativeGetUserDataDir();
             var res = ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            if (!string.IsNullOrEmpty(res))
+                _cachedUserDataDir = res;
             PatchHelper.Log($"[IOSBridge] GetUserDataDir: {res}");
             return res ?? string.Empty;
         }
@@ -119,15 +127,12 @@ internal static class IOSGodotAppBridge
         }
     }
 
-    internal static (float Top, float Bottom, float Left, float Right) GetSafeAreaInsets()
+    internal static void GetSafeAreaInsets(out float top, out float bottom, out float left, out float right)
     {
-        if (!OperatingSystem.IsIOS()) return (0, 0, 0, 0);
-        try
-        {
-            NativeGetSafeAreaInsets(out var top, out var bottom, out var left, out var right);
-            return (top, bottom, left, right);
-        }
-        catch { return (0, 0, 0, 0); }
+        top = 0f; bottom = 0f; left = 0f; right = 0f;
+        if (!OperatingSystem.IsIOS()) return;
+        try { NativeGetSafeAreaInsets(out top, out bottom, out left, out right); }
+        catch { }
     }
 
     internal static void RestartApp()
@@ -137,16 +142,16 @@ internal static class IOSGodotAppBridge
         catch { }
     }
 
-    internal static void RequestGameLaunchAndRestart(string pckPath, string source)
+    internal static void RequestGameLaunchAndRestart(string pckPath, string source = "launcher")
     {
         if (!OperatingSystem.IsIOS()) return;
-        try { NativeRequestGameLaunchAndRestart(pckPath, source); }
+        try { NativeRequestGameLaunchAndRestart(pckPath ?? string.Empty, source ?? "launcher"); }
         catch { }
     }
 
     internal static bool GetOrCreateDeviceKey(byte[] keyOut)
     {
-        if (!OperatingSystem.IsIOS() || keyOut == null || keyOut.Length != 32) return false;
+        if (!OperatingSystem.IsIOS() || keyOut == null || keyOut.Length < 32) return false;
         try { return NativeGetOrCreateDeviceKey(keyOut, keyOut.Length); }
         catch { return false; }
     }

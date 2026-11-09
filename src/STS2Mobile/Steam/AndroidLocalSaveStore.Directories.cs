@@ -1,15 +1,14 @@
 using System;
 using System.IO;
 using System.Linq;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace STS2Mobile.Steam;
 
 internal sealed partial class AndroidLocalSaveStore
 {
-    bool ISaveStore.DirectoryExists(string path) => Directory.Exists(FullPath(path));
+    internal bool DirectoryExists(string path) => Directory.Exists(FullPath(path));
 
-    string[] ISaveStore.GetFilesInDirectory(string directoryPath)
+    internal string[] GetFilesInDirectory(string directoryPath)
     {
         var fullPath = FullPath(directoryPath);
         if (!Directory.Exists(fullPath))
@@ -23,7 +22,7 @@ internal sealed partial class AndroidLocalSaveStore
         return files;
     }
 
-    string[] ISaveStore.GetDirectoriesInDirectory(string directoryPath)
+    internal string[] GetDirectoriesInDirectory(string directoryPath)
     {
         var fullPath = FullPath(directoryPath);
         if (!Directory.Exists(fullPath))
@@ -37,9 +36,9 @@ internal sealed partial class AndroidLocalSaveStore
         return directories;
     }
 
-    void ISaveStore.CreateDirectory(string directoryPath) => Directory.CreateDirectory(FullPath(directoryPath));
+    internal void CreateDirectory(string directoryPath) => Directory.CreateDirectory(FullPath(directoryPath));
 
-    void ISaveStore.DeleteDirectory(string directoryPath)
+    internal void DeleteDirectory(string directoryPath)
     {
         var fullPath = FullPath(directoryPath);
         if (!Directory.Exists(fullPath))
@@ -49,7 +48,7 @@ internal sealed partial class AndroidLocalSaveStore
         NotifyMutationCommitted(directoryPath);
     }
 
-    void ISaveStore.DeleteTemporaryFiles(string directoryPath)
+    internal void DeleteTemporaryFiles(string directoryPath)
     {
         var fullPath = FullPath(directoryPath);
         if (!Directory.Exists(fullPath))

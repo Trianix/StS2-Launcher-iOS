@@ -201,8 +201,12 @@ for dll in SteamKit2.dll protobuf-net.dll protobuf-net.Core.dll System.IO.Hashin
     fi
 done
 cp -f "$IOS_BCL_ASSETS_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
-# Ensure sts2.dll is NEVER packaged into the launcher bundle; it is downloaded/staged per-slot at runtime
-rm -f "$IOS_BUNDLE_BCL_DIR/sts2.dll" "$ASSEMBLIES_DIR/sts2.dll"
+# Stage metadata-only reference sts2.dll into dotnet_bcl so initial launcher boot can resolve types before any game branch is downloaded.
+# Never place sts2.dll in assemblies/ so IOSAssemblyBootstrapper will not overwrite a staged runtime-pack sts2.dll.
+if [ -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" ]; then
+    cp -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" "$IOS_BUNDLE_BCL_DIR/sts2.dll"
+fi
+rm -f "$ASSEMBLIES_DIR/sts2.dll"
 
 # 4. Build with Xcode
 mkdir -p "$ARTIFACTS_DIR"

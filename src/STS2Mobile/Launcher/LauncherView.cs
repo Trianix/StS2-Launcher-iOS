@@ -104,7 +104,7 @@ internal sealed partial class LauncherView
         if (!profile.Compact)
             shell.Content.MoveChild(navigation.Root, 1);
         _destinationNavigationFrame = navigation.Root;
-        _destinationSafeAreaSpacer = profile.Compact && OperatingSystem.IsAndroid() ? new Control
+        _destinationSafeAreaSpacer = profile.Compact && (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) ? new Control
         {
             MouseFilter = Control.MouseFilterEnum.Ignore
         }

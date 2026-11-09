@@ -79,12 +79,13 @@ internal sealed class StyledLineEdit : LineEdit
 
     private void ShowAndroidKeyboard()
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS())
             return;
 
         try
         {
-            AndroidGodotAppBridge.NotifyLauncherTextEditingRequested(true);
+            if (OperatingSystem.IsAndroid())
+                AndroidGodotAppBridge.NotifyLauncherTextEditingRequested(true);
             DisplayServer.VirtualKeyboardShow(
                 Text,
                 new Rect2(GlobalPosition, Size),

@@ -1,7 +1,6 @@
 using System;
 using System.Reflection;
 using Godot;
-using MegaCrit.Sts2.Core.Nodes;
 
 namespace STS2Mobile.Launcher;
 
@@ -21,7 +20,7 @@ internal static class LauncherGameSceneReadiness
             return;
         for (var parent = node.GetParent(); parent != null; parent = parent.GetParent())
         {
-            if (parent is NGame)
+            if (parent.GetType().FullName == "MegaCrit.Sts2.Core.Nodes.NGame")
             {
                 Binding.MarkReady(scene, parent);
                 return;

@@ -144,7 +144,7 @@ internal sealed partial class LauncherView
 
     internal void UpdateSystemInsets()
     {
-        if (!_profile.Compact || !OperatingSystem.IsAndroid())
+        if (!_profile.Compact || (!OperatingSystem.IsAndroid() && !OperatingSystem.IsIOS()))
             return;
         var safeArea = DisplayServer.GetDisplaySafeArea();
         if (safeArea.Size.X <= 0 || safeArea.Size.Y <= 0)

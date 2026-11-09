@@ -45,7 +45,7 @@ internal readonly struct LauncherLayoutProfile
     internal bool CompactStackedActionRows { get; }
 
     internal static LauncherLayoutProfile ForViewport(Vector2 viewportSize)
-        => ForViewport(viewportSize, OperatingSystem.IsAndroid());
+        => ForViewport(viewportSize, OperatingSystem.IsAndroid() || OperatingSystem.IsIOS());
 
     internal static LauncherLayoutProfile ForViewport(
         Vector2 viewportSize,
@@ -65,7 +65,7 @@ internal readonly struct LauncherLayoutProfile
                 ? CompactScaleFloor
                 : WideScaleFloor;
         var viewportScale = Math.Clamp(shortEdge / ReferenceShortEdge, scaleFloor, scaleCeiling);
-        var scale = OperatingSystem.IsAndroid() && touchOptimized
+        var scale = (OperatingSystem.IsAndroid() || OperatingSystem.IsIOS()) && touchOptimized
             ? ResolveAndroidScale(viewportScale)
             : viewportScale;
         var panelWidth = compact ? 1.0f : touchOptimized ? 0.96f : 0.78f;

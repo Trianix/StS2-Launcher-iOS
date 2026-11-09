@@ -148,6 +148,13 @@ internal static class ModLoaderPatches
         return __exception;
     }
 
+    private static LauncherModNativeError FromLocString(LocString value) => new()
+    {
+        LocTable = value.LocTable,
+        LocEntryKey = value.LocEntryKey,
+        Variables = value.Variables.ToDictionary(pair => pair.Key, pair => LauncherModNativeError.DiagnosticValue(pair.Value)),
+    };
+
     private static void Complete(LoadScope scope, Exception error)
     {
         if (scope == null || Interlocked.Exchange(ref scope.Completed, 1) != 0) return;
@@ -161,7 +168,7 @@ internal static class ModLoaderPatches
                 Id = pair.Key.manifest?.id ?? "",
                 Name = pair.Key.manifest?.name ?? pair.Key.manifest?.id ?? "",
                 NativeState = pair.Key.state.ToString(),
-                NativeErrors = pair.Key.errors?.Select(LauncherModNativeError.From).ToArray() ?? Array.Empty<LauncherModNativeError>(),
+                NativeErrors = pair.Key.errors?.Select(FromLocString).ToArray() ?? Array.Empty<LauncherModNativeError>(),
             }).ToArray();
             LauncherModLaunchResultStore.WriteCompletion(scope.Prepared.Plan, scope.Prepared.AttemptId,
                 scope.Prepared.GameIdentityId, scope.Prepared.RuntimePackId, scope.Prepared.SelectionFingerprint,

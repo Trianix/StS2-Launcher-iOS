@@ -1,47 +1,46 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace STS2Mobile.Steam;
 
 internal sealed partial class AndroidLocalSaveStore
 {
-    string ISaveStore.ReadFile(string path)
+    internal string ReadFile(string path)
     {
         PatchHelper.Log($"[Save] Android local save read: {path} -> {FullPath(path)}");
         return ReadTextFile(path);
     }
 
-    Task<string> ISaveStore.ReadFileAsync(string path)
+    internal Task<string> ReadFileAsync(string path)
     {
         PatchHelper.Log($"[Save] Android local save read async: {path} -> {FullPath(path)}");
         return Task.FromResult(ReadTextFile(path));
     }
 
-    void ISaveStore.WriteFile(string path, string content)
+    internal void WriteFile(string path, string content)
     {
         WriteTextFile(path, content);
     }
 
-    void ISaveStore.WriteFile(string path, byte[] bytes)
+    internal void WriteFile(string path, byte[] bytes)
     {
         WriteBytesFile(path, bytes);
     }
 
-    Task ISaveStore.WriteFileAsync(string path, string content)
+    internal Task WriteFileAsync(string path, string content)
     {
         WriteTextFile(path, content);
         return Task.CompletedTask;
     }
 
-    Task ISaveStore.WriteFileAsync(string path, byte[] bytes)
+    internal Task WriteFileAsync(string path, byte[] bytes)
     {
         WriteBytesFile(path, bytes);
         return Task.CompletedTask;
     }
 
-    bool ISaveStore.FileExists(string path)
+    internal bool FileExists(string path)
     {
         var fullPath = FullPath(path);
         var exists = File.Exists(fullPath);
@@ -50,7 +49,7 @@ internal sealed partial class AndroidLocalSaveStore
         return exists;
     }
 
-    void ISaveStore.DeleteFile(string path)
+    internal void DeleteFile(string path)
     {
         var fullPath = FullPath(path);
         if (!File.Exists(fullPath))
@@ -61,7 +60,7 @@ internal sealed partial class AndroidLocalSaveStore
         NotifyMutationCommitted(path);
     }
 
-    void ISaveStore.RenameFile(string sourcePath, string destinationPath)
+    internal void RenameFile(string sourcePath, string destinationPath)
     {
         var source = FullPath(sourcePath);
         var destination = FullPath(destinationPath);
@@ -74,7 +73,7 @@ internal sealed partial class AndroidLocalSaveStore
         NotifyMutationCommitted(destinationPath);
     }
 
-    DateTimeOffset ISaveStore.GetLastModifiedTime(string path)
+    internal DateTimeOffset GetLastModifiedTime(string path)
     {
         var fullPath = FullPath(path);
         return File.Exists(fullPath)
@@ -82,20 +81,20 @@ internal sealed partial class AndroidLocalSaveStore
             : DateTimeOffset.MinValue;
     }
 
-    int ISaveStore.GetFileSize(string path)
+    internal int GetFileSize(string path)
     {
         var fullPath = FullPath(path);
         return File.Exists(fullPath) ? checked((int)new FileInfo(fullPath).Length) : 0;
     }
 
-    void ISaveStore.SetLastModifiedTime(string path, DateTimeOffset time)
+    internal void SetLastModifiedTime(string path, DateTimeOffset time)
     {
         var fullPath = FullPath(path);
         if (File.Exists(fullPath) && time > DateTimeOffset.MinValue)
             File.SetLastWriteTimeUtc(fullPath, time.UtcDateTime);
     }
 
-    string ISaveStore.GetFullPath(string filename)
+    internal string GetFullPath(string filename)
     {
         return FullPath(filename);
     }

@@ -1,11 +1,10 @@
 using System;
 using System.IO;
 using Godot;
-using MegaCrit.Sts2.Core.Saves;
 
 namespace STS2Mobile.Steam;
 
-internal sealed partial class AndroidLocalSaveStore : ISaveStore
+internal sealed partial class AndroidLocalSaveStore
 {
     private readonly string _basePath;
     private readonly string _basePathWithSeparator;

@@ -1,3 +1,5 @@
+using System;
+using System.Globalization;
 using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Nodes;
@@ -48,5 +50,72 @@ internal static partial class PlatformPatches
             PatchHelper.Log("Locale fix: GetThreeLetterLanguageCode not found, skipping");
 
         return method;
+    }
+
+    private static void ApplyLocManagerCulturePatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
+            if (locManagerType == null)
+            {
+                PatchHelper.Log("Locale fix: LocManager not found, skipping");
+                return;
+            }
+
+            var method = locManagerType.GetMethod(
+                "CultureInfoFromThreeLetterCode",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("Locale fix: CultureInfoFromThreeLetterCode not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(CultureInfoFromThreeLetterCodePrefix)))
+            );
+            PatchHelper.Log(
+                "Patched LocManager.CultureInfoFromThreeLetterCode (globalization-invariant fix)"
+            );
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"LocManager.CultureInfoFromThreeLetterCode patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyCultureInfoGetCultureInfoPatch(Harmony harmony)
+    {
+        try
+        {
+            var method = typeof(CultureInfo).GetMethod(
+                "GetCultureInfo",
+                BindingFlags.Public | BindingFlags.Static,
+                binder: null,
+                types: new[] { typeof(string) },
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("Locale fix: CultureInfo.GetCultureInfo(string) not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(GetCultureInfoPrefix)))
+            );
+            PatchHelper.Log(
+                "Patched CultureInfo.GetCultureInfo (globalization-invariant fix)"
+            );
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"CultureInfo.GetCultureInfo patch failed: {ex.Message}");
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Platform;
@@ -68,5 +69,25 @@ internal static partial class PlatformPatches
     {
         __result = ResolveThreeLetterLanguageCode();
         return false;
+    }
+
+    private static bool CultureInfoFromThreeLetterCodePrefix(ref CultureInfo __result)
+    {
+        if (MobilePlatform.IsMobile)
+        {
+            __result = CultureInfo.InvariantCulture;
+            return false;
+        }
+        return true;
+    }
+
+    private static bool GetCultureInfoPrefix(string name, ref CultureInfo __result)
+    {
+        if (MobilePlatform.IsMobile)
+        {
+            __result = CultureInfo.InvariantCulture;
+            return false;
+        }
+        return true;
     }
 }

@@ -29,7 +29,7 @@ internal sealed partial class LauncherLaunchCoordinator
         var attemptTimer = Stopwatch.StartNew();
         try
         {
-            var restoringPendingAttempt = string.Equals(
+            var restoringPendingAttempt = !OperatingSystem.IsIOS() && string.Equals(
                 plan.Source,
                 LauncherLaunchSource.AutoLaunch,
                 StringComparison.Ordinal

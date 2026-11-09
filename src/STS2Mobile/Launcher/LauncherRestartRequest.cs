@@ -19,7 +19,11 @@ internal sealed record LauncherRestartRequest(
     });
 
     internal static LauncherRestartRequest ConsumeRestored()
-        => ParseRestored(AndroidGodotAppBridge.ConsumeLaunchRestartRequest(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    {
+        if (OperatingSystem.IsIOS())
+            return null;
+        return ParseRestored(AndroidGodotAppBridge.ConsumeLaunchRestartRequest(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    }
 
     internal static LauncherRestartRequest ParseRestored(string json, long now)
     {

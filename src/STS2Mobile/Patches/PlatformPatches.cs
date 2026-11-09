@@ -92,5 +92,7 @@ internal static partial class PlatformPatches
         // Android locale tags can include Unicode/private-use extensions that
         // some .NET runtimes fail to parse directly.
         ApplyNullPlatformLanguagePatch(harmony);
+        ApplyLocManagerCulturePatch(harmony);
+        ApplyCultureInfoGetCultureInfoPatch(harmony);
     }
 }

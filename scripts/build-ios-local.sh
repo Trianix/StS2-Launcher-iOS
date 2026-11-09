@@ -46,6 +46,10 @@ cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$IOS_BCL_ASSETS_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$IOS_BCL_ASSETS_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$IOS_BCL_ASSETS_DIR/" 2>/dev/null || true
 
+echo "Patching MonoMod.Core for iOS..."
+dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$IOS_BCL_ASSETS_DIR/MonoMod.Core.dll"
+cp -f "$IOS_BCL_ASSETS_DIR/MonoMod.Core.dll" "$UPSTREAM_PUBLISH_DIR/MonoMod.Core.dll" 2>/dev/null || true
+
 IOS_RUNTIME_NUPKG="$DEPS_CACHE_DIR/microsoft.netcore.app.runtime.mono.ios-arm64.9.0.7.nupkg"
 if [ ! -f "$IOS_RUNTIME_NUPKG" ]; then
     echo "Downloading Microsoft.NETCore.App.Runtime.Mono.ios-arm64 9.0.7..."
@@ -182,6 +186,9 @@ fi
 
 echo "Patching SteamKit2 for iOS..."
 dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-ios "$MANAGED_PUBLISH/SteamKit2.dll"
+if [ -f "$MANAGED_PUBLISH/MonoMod.Core.dll" ]; then
+    dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$MANAGED_PUBLISH/MonoMod.Core.dll"
+fi
 
 # 2. Generate Bootstrap PCK
 echo "Generating bootstrap.pck..."

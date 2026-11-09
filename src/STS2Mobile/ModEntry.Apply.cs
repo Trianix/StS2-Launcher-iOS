@@ -49,7 +49,7 @@ public static partial class ModEntry
             BootstrapTrace.Log("Starting startup patch orchestration");
             var patchResult = StartupPatchOrchestrator.Apply(harmony);
             BootstrapTrace.Log("Finished startup patch orchestration");
-            LauncherRuntimePatchValidationEvidence.Write(OS.GetDataDir(), patchResult);
+            LauncherRuntimePatchValidationEvidence.Write(RuntimeDataDirectory, patchResult);
 
             if (patchResult.CriticalFailed)
             {

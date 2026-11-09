@@ -114,6 +114,7 @@ internal sealed partial class LauncherController
         );
         var cancellation = new CancellationTokenSource();
         _saveSyncCancellation = cancellation;
+        PatchHelper.Log($"[SaveSync] Starting sync request={request}, overwriteConfirmed={overwriteConfirmed}");
         _saveSyncTask = RunSaveSyncAsync(
             service,
             request,
@@ -150,6 +151,7 @@ internal sealed partial class LauncherController
         }
 
         ReleaseSaveSyncOperation();
+        PatchHelper.Log($"[SaveSync] Finished sync request={request}: success={result.Success}, outcome={result.Outcome}, prompt={result.Prompt}, failureKind={result.FailureKind}, message={result.Message}");
         QueueSaveSyncUiCompletion(() => FinishSaveSync(request, result));
     }
 

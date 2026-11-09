@@ -5,6 +5,8 @@
 #import <UserNotifications/UserNotifications.h>
 #import <sys/utsname.h>
 #import <unistd.h>
+#import <fcntl.h>
+#import <errno.h>
 
 extern "C" {
 
@@ -221,6 +223,21 @@ IOS_BRIDGE_EXPORT bool ios_get_or_create_device_key(uint8_t *key_out, int key_le
     NSLog(@"[STS2Launcher iOS] SecItemAdd warning status: %d", (int)status);
     memcpy(key_out, newKey.bytes, key_len);
     return false;
+}
+
+// POSIX compatibility shims for MonoMod on Darwin/iOS
+IOS_BRIDGE_EXPORT int pipe2(int fds[2], int flags) {
+    int ret = pipe(fds);
+    if (ret != 0) return ret;
+    if (flags & 0x80000) { // O_CLOEXEC
+        fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    }
+    return 0;
+}
+
+IOS_BRIDGE_EXPORT int* __errno_location(void) {
+    return __error();
 }
 
 }

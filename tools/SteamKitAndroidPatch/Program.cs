@@ -14,10 +14,17 @@ if (args.Length == 2 && args[0] == "--patch-ios")
     return;
 }
 
+if (args.Length == 2 && args[0] == "--patch-monomod-ios")
+{
+    PatchMonoModForIos(args[1]);
+    return;
+}
+
 if (args.Length < 2 || args.Length > 3)
 {
     Console.Error.WriteLine("Usage: SteamKitPatch <SteamKit2.dll> <STS2Mobile.dll> [sts2.dll]");
     Console.Error.WriteLine("       SteamKitPatch --patch-ios <SteamKit2.dll>");
+    Console.Error.WriteLine("       SteamKitPatch --patch-monomod-ios <MonoMod.Core.dll>");
     Console.Error.WriteLine("       SteamKitPatch --verify-apk <apk>");
     Environment.Exit(2);
 }
@@ -798,6 +805,80 @@ static void PatchSteamKitForIos(string steamKitPath)
 
     WriteModuleOverOriginal(steamKit, steamKitPath);
     Console.WriteLine("Patched SteamKit2.dll for iOS: replaced Process.GetCurrentProcess().StartTime with DateTime.UtcNow and cleared local variables");
+}
+
+static void PatchMonoModForIos(string monoModPath)
+{
+    if (!File.Exists(monoModPath))
+        throw new FileNotFoundException("MonoMod.Core.dll not found", monoModPath);
+
+    var resolver = CreateResolver(monoModPath);
+    var reader = new ReaderParameters { AssemblyResolver = resolver, ReadWrite = false };
+    var monoMod = ModuleDefinition.ReadModule(monoModPath, reader);
+
+    var tripleType = monoMod.GetType("MonoMod.Core.Platforms.PlatformTriple")
+        ?? throw new InvalidOperationException("Could not find MonoMod.Core.Platforms.PlatformTriple");
+    var createMethod = tripleType.Methods.FirstOrDefault(x => x.Name == "CreateCurrentSystem")
+        ?? throw new InvalidOperationException("Could not find PlatformTriple.CreateCurrentSystem");
+
+    // 1. Find the instruction that creates AndroidSystem
+    var newobjAndroid = createMethod.Body.Instructions.FirstOrDefault(i =>
+        i.OpCode == OpCodes.Newobj &&
+        i.Operand is MethodReference mr &&
+        mr.DeclaringType.FullName == "MonoMod.Core.Platforms.Systems.AndroidSystem")
+        ?? throw new InvalidOperationException("Could not find newobj AndroidSystem in CreateCurrentSystem");
+
+    // 2. Find the instruction that compares OS to 17 (OSKind.IOS) and branches to NotImplementedException
+    Instruction? beqIos = null;
+    for (int i = 0; i < createMethod.Body.Instructions.Count - 1; i++)
+    {
+        var inst = createMethod.Body.Instructions[i];
+        if ((inst.OpCode == OpCodes.Ldc_I4_S && (sbyte)inst.Operand == 17) ||
+            (inst.OpCode == OpCodes.Ldc_I4 && (int)inst.Operand == 17))
+        {
+            var next = createMethod.Body.Instructions[i + 1];
+            if (next.OpCode == OpCodes.Beq_S || next.OpCode == OpCodes.Beq)
+            {
+                if (next.Operand is Instruction target && target.OpCode == OpCodes.Newobj &&
+                    target.Operand is MethodReference tmr && tmr.DeclaringType.FullName == "System.NotImplementedException")
+                {
+                    beqIos = next;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (beqIos != null)
+    {
+        beqIos.Operand = newobjAndroid;
+        Console.WriteLine("Patched PlatformTriple.CreateCurrentSystem: redirected OSKind.IOS (17) -> new AndroidSystem()");
+    }
+    else
+    {
+        Console.WriteLine("Notice: beq to NotImplementedException for OSKind.IOS not found (may already be patched)");
+    }
+
+    // 3. Patch FlushInstructionCache P/Invoke in AndroidSystem to __Internal
+    var androidType = monoMod.GetType("MonoMod.Core.Platforms.Systems.AndroidSystem");
+    if (androidType != null)
+    {
+        var flushMethod = androidType.Methods.FirstOrDefault(x => x.Name == "FlushInstructionCache");
+        if (flushMethod?.PInvokeInfo != null)
+        {
+            var internalModule = monoMod.ModuleReferences.FirstOrDefault(m => m.Name == "__Internal");
+            if (internalModule == null)
+            {
+                internalModule = new ModuleReference("__Internal");
+                monoMod.ModuleReferences.Add(internalModule);
+            }
+            flushMethod.PInvokeInfo.Module = internalModule;
+            Console.WriteLine("Patched AndroidSystem.FlushInstructionCache: P/Invoke module -> __Internal");
+        }
+    }
+
+    WriteModuleOverOriginal(monoMod, monoModPath);
+    Console.WriteLine("Successfully wrote patched MonoMod.Core.dll for iOS: " + monoModPath);
 }
 
 static void PatchProcessStartTime(ModuleDefinition steamKit)

@@ -504,10 +504,10 @@ index c74c5c1..596e1b0 100644
  		if (is_valid_family_access (access_klass, member_klass, context_klass))
  			return TRUE;
 diff --git a/src/mono/mono/mini/tramp-arm64.c b/src/mono/mono/mini/tramp-arm64.c
-index f486998..17d95a4 100644
+index f486998..dab5889 100644
 --- a/src/mono/mono/mini/tramp-arm64.c
 +++ b/src/mono/mono/mini/tramp-arm64.c
-@@ -343,9 +343,224 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
+@@ -343,9 +343,238 @@ mono_arch_create_generic_trampoline (MonoTrampolineType tramp_type, MonoTrampInf
  	return (guchar*)MINI_ADDR_TO_FTNPTR (buf);
  }
  
@@ -528,18 +528,27 @@ index f486998..17d95a4 100644
 +	gpointer addr;
 +} MonoStaticRgctxEntry;
 +
-+#define MONO_STATIC_RGCTX_POOL_SIZE 2048
-+#define MONO_STATIC_UNBOX_POOL_SIZE 1024
-+#define MONO_STATIC_SPECIFIC_POOL_SIZE 1024
++#define MONO_STATIC_RGCTX_POOL_SIZE 65536
++#define MONO_STATIC_RGCTX_HASH_SIZE 65536
++#define MONO_STATIC_UNBOX_POOL_SIZE 8192
++#define MONO_STATIC_UNBOX_HASH_SIZE 16384
++#define MONO_STATIC_SPECIFIC_POOL_SIZE 8192
++#define MONO_STATIC_SPECIFIC_HASH_SIZE 16384
 +
 +MonoStaticRgctxEntry mono_static_rgctx_table [MONO_STATIC_RGCTX_POOL_SIZE];
 +gint32 mono_static_rgctx_count = 0;
++static gint32 mono_static_rgctx_hash_head [MONO_STATIC_RGCTX_HASH_SIZE];
++static gint32 mono_static_rgctx_hash_next [MONO_STATIC_RGCTX_POOL_SIZE];
 +
 +gpointer mono_static_unbox_table [MONO_STATIC_UNBOX_POOL_SIZE];
 +gint32 mono_static_unbox_count = 0;
++static gint32 mono_static_unbox_hash_head [MONO_STATIC_UNBOX_HASH_SIZE];
++static gint32 mono_static_unbox_hash_next [MONO_STATIC_UNBOX_POOL_SIZE];
 +
 +MonoStaticRgctxEntry mono_static_specific_table [MONO_STATIC_SPECIFIC_POOL_SIZE];
 +gint32 mono_static_specific_count = 0;
++static gint32 mono_static_specific_hash_head [MONO_STATIC_SPECIFIC_HASH_SIZE];
++static gint32 mono_static_specific_hash_next [MONO_STATIC_SPECIFIC_POOL_SIZE];
 +
 +__asm__ (
 +	".text\n"
@@ -557,7 +566,7 @@ index f486998..17d95a4 100644
 +	".globl " CSYM(mono_rgctx_stubs) "\n"
 +	CSYM(mono_rgctx_stubs) ":\n"
 +	"	.set _rgctx_i, 0\n"
-+	"	.rept 2048\n"
++	"	.rept 65536\n"
 +	"		mov x16, _rgctx_i\n"
 +	"		b " CSYM(mono_static_rgctx_common) "\n"
 +	"		.set _rgctx_i, _rgctx_i + 1\n"
@@ -577,7 +586,7 @@ index f486998..17d95a4 100644
 +	".globl " CSYM(mono_unbox_stubs) "\n"
 +	CSYM(mono_unbox_stubs) ":\n"
 +	"	.set _unbox_i, 0\n"
-+	"	.rept 1024\n"
++	"	.rept 8192\n"
 +	"		mov x16, _unbox_i\n"
 +	"		b " CSYM(mono_static_unbox_common) "\n"
 +	"		.set _unbox_i, _unbox_i + 1\n"
@@ -597,7 +606,7 @@ index f486998..17d95a4 100644
 +	".globl " CSYM(mono_specific_stubs) "\n"
 +	CSYM(mono_specific_stubs) ":\n"
 +	"	.set _spec_i, 0\n"
-+	"	.rept 1024\n"
++	"	.rept 8192\n"
 +	"		mov x17, _spec_i\n"
 +	"		b " CSYM(mono_static_specific_common) "\n"
 +	"		.set _spec_i, _spec_i + 1\n"
@@ -708,9 +717,12 @@ index f486998..17d95a4 100644
 +#if defined(TARGET_ARM64) || defined(__aarch64__)
 +	if (tramp_type != MONO_TRAMPOLINE_JUMP) {
 +		guint8 *tramp = mono_get_trampoline_code (tramp_type);
++		uintptr_t v = ((uintptr_t)arg1 >> 3) ^ ((uintptr_t)tramp >> 2) ^ ((uintptr_t)arg1 >> 16);
++		guint32 h = (guint32)((v ^ (v >> 14)) & (MONO_STATIC_SPECIFIC_HASH_SIZE - 1));
 +		static int spec_lock = 0;
 +		while (__atomic_test_and_set (&spec_lock, __ATOMIC_ACQUIRE)) {}
-+		for (int i = 0; i < mono_static_specific_count; i++) {
++		for (gint32 chain = mono_static_specific_hash_head [h]; chain != 0; chain = mono_static_specific_hash_next [chain - 1]) {
++			gint32 i = chain - 1;
 +			if (mono_static_specific_table [i].arg == arg1 && mono_static_specific_table [i].addr == tramp) {
 +				__atomic_clear (&spec_lock, __ATOMIC_RELEASE);
 +				if (code_len)
@@ -722,6 +734,8 @@ index f486998..17d95a4 100644
 +		g_assert (idx < MONO_STATIC_SPECIFIC_POOL_SIZE);
 +		mono_static_specific_table [idx].arg = arg1;
 +		mono_static_specific_table [idx].addr = tramp;
++		mono_static_specific_hash_next [idx] = mono_static_specific_hash_head [h];
++		mono_static_specific_hash_head [h] = idx + 1;
 +		__atomic_thread_fence (__ATOMIC_SEQ_CST);
 +		__atomic_clear (&spec_lock, __ATOMIC_RELEASE);
 +		if (code_len)
@@ -732,14 +746,17 @@ index f486998..17d95a4 100644
  	guint8 *code, *buf, *tramp;
  	int buf_len = 64;
  
-@@ -392,6 +607,22 @@ mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_ty
+@@ -392,6 +621,27 @@ mono_arch_create_specific_trampoline (gpointer arg1, MonoTrampolineType tramp_ty
  gpointer
  mono_arch_get_unbox_trampoline (MonoMethod *m, gpointer addr)
  {
 +#if defined(TARGET_ARM64) || defined(__aarch64__)
++	uintptr_t v = (uintptr_t)addr >> 3;
++	guint32 h = (guint32)((v ^ (v >> 14)) & (MONO_STATIC_UNBOX_HASH_SIZE - 1));
 +	static int unbox_lock = 0;
 +	while (__atomic_test_and_set (&unbox_lock, __ATOMIC_ACQUIRE)) {}
-+	for (int i = 0; i < mono_static_unbox_count; i++) {
++	for (gint32 chain = mono_static_unbox_hash_head [h]; chain != 0; chain = mono_static_unbox_hash_next [chain - 1]) {
++		gint32 i = chain - 1;
 +		if (mono_static_unbox_table [i] == addr) {
 +			__atomic_clear (&unbox_lock, __ATOMIC_RELEASE);
 +			return (gpointer)MINI_ADDR_TO_FTNPTR ((guint8*)mono_unbox_stubs + i * 8);
@@ -748,6 +765,8 @@ index f486998..17d95a4 100644
 +	int idx = mono_static_unbox_count++;
 +	g_assert (idx < MONO_STATIC_UNBOX_POOL_SIZE);
 +	mono_static_unbox_table [idx] = addr;
++	mono_static_unbox_hash_next [idx] = mono_static_unbox_hash_head [h];
++	mono_static_unbox_hash_head [h] = idx + 1;
 +	__atomic_thread_fence (__ATOMIC_SEQ_CST);
 +	__atomic_clear (&unbox_lock, __ATOMIC_RELEASE);
 +	return (gpointer)MINI_ADDR_TO_FTNPTR ((guint8*)mono_unbox_stubs + idx * 8);
@@ -755,7 +774,7 @@ index f486998..17d95a4 100644
  	guint8 *code, *start;
  	guint32 size = 32;
  	MonoMemoryManager *mem_manager = m_method_get_mem_manager (m);
-@@ -411,11 +642,29 @@ mono_arch_get_unbox_trampoline (MonoMethod *m, gpointer addr)
+@@ -411,11 +661,34 @@ mono_arch_get_unbox_trampoline (MonoMethod *m, gpointer addr)
  	MINI_END_CODEGEN (start, GPTRDIFF_TO_INT (code - start), MONO_PROFILER_CODE_BUFFER_UNBOX_TRAMPOLINE, m);
  
  	return (gpointer)MINI_ADDR_TO_FTNPTR (start);
@@ -766,9 +785,12 @@ index f486998..17d95a4 100644
  mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer arg, gpointer addr)
  {
 +#if defined(TARGET_ARM64) || defined(__aarch64__)
++	uintptr_t v = ((uintptr_t)arg >> 3) ^ ((uintptr_t)addr >> 2) ^ ((uintptr_t)arg >> 16);
++	guint32 h = (guint32)((v ^ (v >> 16)) & (MONO_STATIC_RGCTX_HASH_SIZE - 1));
 +	static int rgctx_lock = 0;
 +	while (__atomic_test_and_set (&rgctx_lock, __ATOMIC_ACQUIRE)) {}
-+	for (int i = 0; i < mono_static_rgctx_count; i++) {
++	for (gint32 chain = mono_static_rgctx_hash_head [h]; chain != 0; chain = mono_static_rgctx_hash_next [chain - 1]) {
++		gint32 i = chain - 1;
 +		if (mono_static_rgctx_table [i].arg == arg && mono_static_rgctx_table [i].addr == addr) {
 +			__atomic_clear (&rgctx_lock, __ATOMIC_RELEASE);
 +			return (gpointer)MINI_ADDR_TO_FTNPTR ((guint8*)mono_rgctx_stubs + i * 8);
@@ -778,6 +800,8 @@ index f486998..17d95a4 100644
 +	g_assert (idx < MONO_STATIC_RGCTX_POOL_SIZE);
 +	mono_static_rgctx_table [idx].arg = arg;
 +	mono_static_rgctx_table [idx].addr = addr;
++	mono_static_rgctx_hash_next [idx] = mono_static_rgctx_hash_head [h];
++	mono_static_rgctx_hash_head [h] = idx + 1;
 +	__atomic_thread_fence (__ATOMIC_SEQ_CST);
 +	__atomic_clear (&rgctx_lock, __ATOMIC_RELEASE);
 +	return (gpointer)MINI_ADDR_TO_FTNPTR ((guint8*)mono_rgctx_stubs + idx * 8);
@@ -785,7 +809,7 @@ index f486998..17d95a4 100644
  	guint8 *code, *start;
  	guint32 buf_len = 32;
  
-@@ -432,6 +681,7 @@ mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer
+@@ -432,6 +705,7 @@ mono_arch_get_static_rgctx_trampoline (MonoMemoryManager *mem_manager, gpointer
  	g_assert ((code - start) <= buf_len);
  
  	return (gpointer)MINI_ADDR_TO_FTNPTR (start);
@@ -793,7 +817,7 @@ index f486998..17d95a4 100644
  }
  
  gpointer
-@@ -682,6 +932,11 @@ gpointer
+@@ -682,6 +956,11 @@ gpointer
  mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
  {
  #ifndef DISABLE_INTERPRETER
@@ -805,7 +829,7 @@ index f486998..17d95a4 100644
  	guint8 *start = NULL, *code;
  	guint8 *label_start_copy, *label_exit_copy;
  	MonoJumpInfo *ji = NULL;
-@@ -799,6 +1054,7 @@ mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
+@@ -799,6 +1078,7 @@ mono_arch_get_interp_to_native_trampoline (MonoTrampInfo **info)
  		*info = mono_tramp_info_create ("interp_to_native_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
  
  	return (guint8*)MINI_ADDR_TO_FTNPTR (start);
@@ -813,7 +837,7 @@ index f486998..17d95a4 100644
  #else
  	g_assert_not_reached ();
  	return NULL;
-@@ -809,6 +1065,11 @@ gpointer
+@@ -809,6 +1089,11 @@ gpointer
  mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
  {
  #ifndef DISABLE_INTERPRETER
@@ -825,7 +849,7 @@ index f486998..17d95a4 100644
  	guint8 *start = NULL, *code;
  	MonoJumpInfo *ji = NULL;
  	GSList *unwind_ops = NULL;
-@@ -888,6 +1149,7 @@ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
+@@ -888,6 +1173,7 @@ mono_arch_get_native_to_interp_trampoline (MonoTrampInfo **info)
  		*info = mono_tramp_info_create ("native_to_interp_trampoline", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
  
  	return (guint8*)MINI_ADDR_TO_FTNPTR (start);

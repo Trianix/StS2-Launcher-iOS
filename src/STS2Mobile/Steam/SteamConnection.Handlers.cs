@@ -78,17 +78,29 @@ internal sealed partial class SteamConnection
 
     private async Task<TResult> RunConnectedAsync<TResult>(Func<Task<TResult>> operation)
     {
-        EnsureConnected();
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            EnsureConnected();
 
-        await _sendLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            ThrowIfDisposing();
-            return await operation().ConfigureAwait(false);
-        }
-        finally
-        {
-            _sendLock.Release();
+            await _sendLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                ThrowIfDisposing();
+                return await operation().ConfigureAwait(false);
+            }
+            catch (Exception ex) when (attempt < maxAttempts && (ex is AsyncJobFailedException || ex is TimeoutException))
+            {
+                PatchHelper.Log(
+                    $"[Connection] Operation failed (attempt {attempt}/{maxAttempts}): {ex.GetType().Name} - {ex.Message}; retrying..."
+                );
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
+
+            await Task.Delay(1000).ConfigureAwait(false);
         }
     }
 

@@ -90,7 +90,7 @@ index 97985da..b58fcb2 100644
  							/* .cctors: too many apps depend on them */
  							/* running with a specific order... */
 diff --git a/src/mono/mono/mini/mini-runtime.c b/src/mono/mono/mini/mini-runtime.c
-index bcd7754..ce60f52 100644
+index bcd7754..5bd9f8c 100644
 --- a/src/mono/mono/mini/mini-runtime.c
 +++ b/src/mono/mono/mini/mini-runtime.c
 @@ -2506,8 +2506,10 @@ create_jit_info_for_trampoline (MonoMethod *wrapper, MonoTrampInfo *info)
@@ -110,8 +110,9 @@ index bcd7754..ce60f52 100644
  		} else {
  			MonoMethod *nm = mono_marshal_get_native_wrapper (method, TRUE, mono_aot_only);
 -			compiled_method = mono_jit_compile_method_jit_only (nm, error);
+-			if (!compiled_method && mono_aot_only && mono_use_interpreter) {
 +			compiled_method = jit_compile_method_with_policy (nm, TRUE, defer_cctors, error);
- 			if (!compiled_method && mono_aot_only && mono_use_interpreter) {
++			if (!compiled_method && (mono_aot_only || mono_ee_features.force_use_interpreter) && mono_use_interpreter) {
  				// We failed to find wrapper in aot images, try interpreting it instead
  				mono_error_cleanup (error);
  				error_init_reuse (error);
@@ -210,6 +211,18 @@ index bcd7754..ce60f52 100644
  
  		if (!is_ok (error))
  			return NULL;
+@@ -2816,9 +2822,9 @@ lookup_start:
+ 			return NULL;
+ 		}
+ 
+-		if (mono_aot_only) {
++		if (mono_aot_only || mono_ee_features.force_use_interpreter) {
+ 			char *fullname = mono_method_get_full_name (method);
+-			mono_error_set_execution_engine (error, "Attempting to JIT compile method '%s' while running in aot-only mode. See https://learn.microsoft.com/xamarin/ios/internals/limitations for more information.\n", fullname);
++			mono_error_set_execution_engine (error, "Attempting to JIT compile method '%s' while running in aot-only or interpreter-only mode. See https://learn.microsoft.com/xamarin/ios/internals/limitations for more information.\n", fullname);
+ 			g_free (fullname);
+ 
+ 			return NULL;
 @@ -2826,7 +2832,7 @@ lookup_start:
  
  		if (wait_or_register_method_to_compile (method))
@@ -305,6 +318,49 @@ index bcd7754..ce60f52 100644
  		if (exc)
  			*exc = (MonoObject*) mono_error_convert_to_exception (error);
  		return NULL;
+diff --git a/src/mono/mono/mini/interp/interp.c b/src/mono/mono/mini/interp/interp.c
+index 011d99a..a321fbf 100644
+--- a/src/mono/mono/mini/interp/interp.c
++++ b/src/mono/mono/mini/interp/interp.c
+@@ -1763,9 +1763,13 @@ ves_pinvoke_method (
+ 	if (!entry_func) {
+ 		MONO_ENTER_GC_UNSAFE;
+ #ifdef MONO_ARCH_HAS_NO_PROPER_MONOCTX
+-		ERROR_DECL (error);
+-		entry_func = (MonoPIFunc) mono_jit_compile_method_jit_only (mini_get_interp_lmf_wrapper ("mono_interp_to_native_trampoline", (gpointer) mono_interp_to_native_trampoline), error);
+-		mono_error_assert_ok (error);
++		if (mono_ee_features.force_use_interpreter) {
++			entry_func = get_interp_to_native_trampoline ();
++		} else {
++			ERROR_DECL (error);
++			entry_func = (MonoPIFunc) mono_jit_compile_method_jit_only (mini_get_interp_lmf_wrapper ("mono_interp_to_native_trampoline", (gpointer) mono_interp_to_native_trampoline), error);
++			mono_error_assert_ok (error);
++		}
+ #else
+ 		entry_func = get_interp_to_native_trampoline ();
+ #endif
+@@ -3502,8 +3506,10 @@ interp_create_method_pointer (MonoMethod *method, gboolean compile, MonoError *e
+ 	if (!mono_method_signature_has_ext_callconv (sig, MONO_EXT_CALLCONV_SWIFTCALL))
+ #endif
+ 	{
+-		wrapper = mini_get_interp_in_wrapper (sig);
+-		entry_wrapper = mono_jit_compile_method_jit_only (wrapper, error);
++		if (!mono_ee_features.force_use_interpreter) {
++			wrapper = mini_get_interp_in_wrapper (sig);
++			entry_wrapper = mono_jit_compile_method_jit_only (wrapper, error);
++		}
+ 	}
+ #endif
+ 	if (!entry_wrapper) {
+@@ -3524,7 +3530,7 @@ interp_create_method_pointer (MonoMethod *method, gboolean compile, MonoError *e
+ 		}
+ 		entry_wrapper = (gpointer)mono_native_to_interp_trampoline;
+ 		/* We need the lmf wrapper only when being called from mixed mode */
+-		if (sig->pinvoke)
++		if (sig->pinvoke || mono_ee_features.force_use_interpreter)
+ 			entry_func = (gpointer)interp_entry_from_trampoline;
+ 		else {
+ 			static gpointer cached_func = NULL;
 diff --git a/src/mono/mono/mini/mini.c b/src/mono/mono/mini/mini.c
 index 395a869..2111d05 100644
 --- a/src/mono/mono/mini/mini.c

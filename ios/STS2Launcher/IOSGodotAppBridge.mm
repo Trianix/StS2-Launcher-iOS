@@ -7,7 +7,7 @@
 
 extern "C" {
 
-bool ios_share_text_file(const char *path) {
+IOS_BRIDGE_EXPORT bool ios_share_text_file(const char *path) {
     if (!path) return false;
     
     NSString *filePath = [NSString stringWithUTF8String:path];
@@ -28,7 +28,7 @@ bool ios_share_text_file(const char *path) {
     return true;
 }
 
-int64_t ios_get_usable_space_bytes(const char *path) {
+IOS_BRIDGE_EXPORT int64_t ios_get_usable_space_bytes(const char *path) {
     NSString *targetPath = path ? [NSString stringWithUTF8String:path] : NSHomeDirectory();
     NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:targetPath error:nil];
     if (attrs && attrs[NSFileSystemFreeSize]) {
@@ -37,7 +37,7 @@ int64_t ios_get_usable_space_bytes(const char *path) {
     return -1;
 }
 
-const char *ios_get_device_diagnostics(void) {
+IOS_BRIDGE_EXPORT const char *ios_get_device_diagnostics(void) {
     struct utsname systemInfo;
     uname(&systemInfo);
     NSString *deviceModel = [NSString stringWithCString:systemInfo.machine encoding:NSUTF8StringEncoding];
@@ -51,7 +51,7 @@ const char *ios_get_device_diagnostics(void) {
     return strdup([diagnostics UTF8String]);
 }
 
-const char *ios_get_version_name(void) {
+IOS_BRIDGE_EXPORT const char *ios_get_version_name(void) {
     NSString *version = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"];
     if (!version) {
         version = @"0.2.436";
@@ -59,22 +59,30 @@ const char *ios_get_version_name(void) {
     return strdup([version UTF8String]);
 }
 
-void ios_set_keep_screen_on(bool keepOn) {
+IOS_BRIDGE_EXPORT void ios_set_keep_screen_on(bool keepOn) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIApplication sharedApplication].idleTimerDisabled = keepOn;
     });
 }
 
-const char *ios_get_documents_dir(void) {
-    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    return strdup([paths.firstObject UTF8String]);
+IOS_BRIDGE_EXPORT const char *ios_get_documents_dir(void) {
+    static NSString *docs = nil;
+    if (!docs) {
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        docs = paths.firstObject;
+    }
+    return [docs UTF8String];
 }
 
-const char *ios_get_user_data_dir(void) {
-    return strdup([[IOSAssemblyBootstrapper userDataDirectory] UTF8String]);
+IOS_BRIDGE_EXPORT const char *ios_get_user_data_dir(void) {
+    static NSString *userData = nil;
+    if (!userData) {
+        userData = [IOSAssemblyBootstrapper userDataDirectory];
+    }
+    return [userData UTF8String];
 }
 
-void ios_get_safe_area_insets(float *top, float *bottom, float *left, float *right) {
+IOS_BRIDGE_EXPORT void ios_get_safe_area_insets(float *top, float *bottom, float *left, float *right) {
     if (@available(iOS 11.0, *)) {
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (!window && [UIApplication sharedApplication].windows.count > 0) {
@@ -97,7 +105,7 @@ void ios_get_safe_area_insets(float *top, float *bottom, float *left, float *rig
     if (right) *right = 0.0f;
 }
 
-void ios_restart_app(void) {
+IOS_BRIDGE_EXPORT void ios_restart_app(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         // On iOS, an app cannot restart itself directly; exiting allows iOS/SideStore/user to relaunch.
         NSLog(@"[STS2Launcher iOS] Restart requested; terminating application.");
@@ -105,7 +113,7 @@ void ios_restart_app(void) {
     });
 }
 
-void ios_request_game_launch_and_restart(const char *pck_path, const char *source) {
+IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path, const char *source) {
     if (!pck_path) return;
     
     NSString *pckPathStr = [NSString stringWithUTF8String:pck_path];
@@ -155,7 +163,7 @@ void ios_request_game_launch_and_restart(const char *pck_path, const char *sourc
     }
 }
 
-bool ios_get_or_create_device_key(uint8_t *key_out, int key_len) {
+IOS_BRIDGE_EXPORT bool ios_get_or_create_device_key(uint8_t *key_out, int key_len) {
     if (!key_out || key_len <= 0) return false;
     
     NSString *service = @"com.game.sts2launcher";

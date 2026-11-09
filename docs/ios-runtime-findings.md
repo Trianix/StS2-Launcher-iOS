@@ -221,6 +221,45 @@ Deployment / Sideloading: SideStore / StikDebug (DDI auto-mounted via TSS servic
 
 ---
 
+### Issue L: Dynamic `System.Object:interp_in_static` JIT Wrapper in `interp_create_method_pointer`
+- **Symptom:** In `app_output(11).log` (Run `42011259643`), our static `mono_rgctx_stubs` (Issue K) successfully executed at `0x10ef5f450`. However, the app immediately crashed with `SIGSEGV` at heap address `0x116a10588`, which Mono's stack trace identified as:
+  ```text
+  at System.Object:interp_in_static <0x00000>
+  at Godot.Bridge.ScriptManagerBridge:CreateManagedForGodotObjectBinding <0x000af>
+  ```
+  The native disassembly at `0x116a10588` confirmed a JIT-compiled function on the heap:
+  ```arm64
+  0x116a10588: fd 7b bd a9  ->  stp x29, x30, [sp, #-48]!
+  0x116a10588: fd 03 00 91  ->  mov x29, sp
+  0x116a10588: af 13 00 f9  ->  str x15, [x29, #32]
+  ```
+- **Root Cause:**
+  1. In `src/mono/mono/mini/interp/interp.c:3506`, `interp_create_method_pointer` invoked `entry_wrapper = mono_jit_compile_method_jit_only(mini_get_interp_in_wrapper(sig), error)`.
+  2. In interpreter-only mode (`MONO_AOT_MODE_INTERP_ONLY`), `mono_ee_features.force_use_interpreter = TRUE`, but `mono_aot_only = FALSE`.
+  3. Because `jit_only = TRUE` and `mono_aot_only = FALSE`, `mono_jit_compile_method_with_opt` bypassed the interpreter check and invoked `mono_jit_compile_method_inner`, JIT-compiling `System.Object:interp_in_static` onto the heap.
+  4. Because `entry_wrapper` was non-null, Mono never entered `if (!entry_wrapper)` and our static `mono_native_to_interp_trampoline_arm64` was bypassed!
+  5. Furthermore, in `interp.c:1765`, `ves_pinvoke_method` attempted to JIT-compile an LMF wrapper for `mono_interp_to_native_trampoline`, and in `interp.c:3532` non-pinvoke entry functions attempted to JIT-compile an LMF wrapper for `mono_interp_entry_from_trampoline`.
+- **Decision & Fix:**
+  1. In `interp.c` (`interp_create_method_pointer`): guarded `mini_get_interp_in_wrapper` compilation with `if (!mono_ee_features.force_use_interpreter)` so `entry_wrapper` remains `NULL` and always routes to `mono_native_to_interp_trampoline_arm64`.
+  2. In `interp.c` (`interp_create_method_pointer`): changed `if (sig->pinvoke)` to `if (sig->pinvoke || mono_ee_features.force_use_interpreter)` so `entry_func` always points directly to the static `__TEXT` C function `interp_entry_from_trampoline`.
+  3. In `interp.c` (`ves_pinvoke_method`): bypassed LMF JIT wrapper compilation when `mono_ee_features.force_use_interpreter` is active, directly using `get_interp_to_native_trampoline()`.
+  4. In `mini-runtime.c`: updated the AOT limitation guard (`if (mono_aot_only || mono_ee_features.force_use_interpreter)`) right before `mono_jit_compile_method_inner`, creating an airtight guarantee that no JIT codegen can ever emit heap executable code in interpreter mode.
+
+---
+
+### Issue M: Linker Dead-Stripping of `IOSGodotAppBridge` C Functions
+- **Symptom:** During startup, `AppPaths.ResolveAppPrivateDataDirectory()` fell through `IOSGodotAppBridge.GetUserDataDir()` to `Godot.OS.GetDataDir()`, despite `OperatingSystem.IsIOS()` returning true.
+- **Root Cause:**
+  1. In `ios/STS2Launcher.xcodeproj/project.pbxproj`, Xcode builds with `DEAD_CODE_STRIPPING = YES` (`-dead_strip`).
+  2. None of the 11 `extern "C"` functions in `IOSGodotAppBridge.mm` were referenced directly from native Objective-C++ code or marked `no_dead_strip`.
+  3. Clang/ld64 dead-stripped all `ios_*` symbols, causing `[DllImport("__Internal")]` to throw `EntryPointNotFoundException` (which was silently caught).
+- **Decision & Fix:**
+  1. Annotated all 11 bridge functions in `IOSGodotAppBridge.h` and `IOSGodotAppBridge.mm` with `IOS_BRIDGE_EXPORT` (`extern "C" __attribute__((used, visibility("default")))`).
+  2. Added `-Wl,-u,_ios_*` linker flags to both `Debug` and `Release` configurations in `project.pbxproj`, forcing ld64 to preserve every bridge symbol in the binary's dynamic symbol table for runtime `dlsym(RTLD_DEFAULT, "ios_*")` lookup.
+  3. Added diagnostic logging in `IOSGodotAppBridge.cs` to surface exact path resolution in `app_output.log`.
+
+---
+
 ## 3. Verification & Diagnostic Commands
 
 - **Read Device App Output Log:**

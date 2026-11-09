@@ -91,9 +91,15 @@ internal static class IOSGodotAppBridge
         try
         {
             var ptr = NativeGetDocumentsDir();
-            return ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            var res = ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            PatchHelper.Log($"[IOSBridge] GetDocumentsDir: {res}");
+            return res ?? string.Empty;
         }
-        catch { return string.Empty; }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[IOSBridge] GetDocumentsDir exception: {ex}");
+            return string.Empty;
+        }
     }
 
     internal static string GetUserDataDir()
@@ -102,9 +108,15 @@ internal static class IOSGodotAppBridge
         try
         {
             var ptr = NativeGetUserDataDir();
-            return ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            var res = ptr != IntPtr.Zero ? Marshal.PtrToStringUTF8(ptr) : string.Empty;
+            PatchHelper.Log($"[IOSBridge] GetUserDataDir: {res}");
+            return res ?? string.Empty;
         }
-        catch { return string.Empty; }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[IOSBridge] GetUserDataDir exception: {ex}");
+            return string.Empty;
+        }
     }
 
     internal static (float Top, float Bottom, float Left, float Right) GetSafeAreaInsets()

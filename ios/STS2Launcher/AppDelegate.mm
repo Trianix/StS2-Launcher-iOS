@@ -321,6 +321,36 @@ static NSArray *sts2_determine_active_godot_cmdline() {
             }
         }
         
+        // If no pending launch marker, check if a downloaded game PCK is already installed
+        NSString *branchFile = [userData stringByAppendingPathComponent:@"game_branch"];
+        NSString *branch = @"public";
+        if ([fm fileExistsAtPath:branchFile]) {
+            NSString *fileContent = [NSString stringWithContentsOfFile:branchFile encoding:NSUTF8StringEncoding error:nil];
+            if (fileContent) {
+                NSString *trimmed = [fileContent stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                if (trimmed.length > 0) {
+                    branch = trimmed;
+                }
+            }
+        }
+        
+        NSString *installedGamePck = [userData stringByAppendingPathComponent:@"game/SlayTheSpire2.pck"];
+        if (![branch isEqualToString:@"public"]) {
+            NSString *branchPck = [userData stringByAppendingPathComponent:[NSString stringWithFormat:@"game_versions/%@/SlayTheSpire2.pck", branch]];
+            if ([fm fileExistsAtPath:branchPck]) {
+                installedGamePck = branchPck;
+            }
+        }
+        
+        if ([fm fileExistsAtPath:installedGamePck]) {
+            NSLog(@"[STS2Launcher iOS] Found installed game PCK at: %@; booting game directly.", installedGamePck);
+            setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+            setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+            setenv("STS2_ACTIVE_PCK_PATH", [installedGamePck UTF8String], 1);
+            sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", installedGamePck ];
+            return;
+        }
+        
         NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
         NSString *bootstrapPath = [[NSBundle mainBundle] pathForResource:@"bootstrap" ofType:@"pck"];
         if (!bootstrapPath || ![fm fileExistsAtPath:bootstrapPath]) {

@@ -4,6 +4,7 @@
 #import <Security/Security.h>
 #import <UserNotifications/UserNotifications.h>
 #import <sys/utsname.h>
+#import <unistd.h>
 
 extern "C" {
 
@@ -109,7 +110,7 @@ IOS_BRIDGE_EXPORT void ios_restart_app(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         // On iOS, an app cannot restart itself directly; exiting allows iOS/SideStore/user to relaunch.
         NSLog(@"[STS2Launcher iOS] Restart requested; terminating application.");
-        exit(0);
+        _exit(0);
     });
 }
 
@@ -138,10 +139,10 @@ IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path,
         NSLog(@"[STS2Launcher iOS] Error creating launch marker JSON: %@", jsonError);
     }
     
-    // Fallback timer: guaranteed exit after 1.0s even if notifications are blocked or fail
+    // Fallback timer: guaranteed clean exit after 1.0s even if notifications are blocked or fail
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         NSLog(@"[STS2Launcher iOS] Launch handoff complete; terminating launcher for game boot.");
-        exit(0);
+        _exit(0);
     });
     
     // 2. Schedule local notification to alert the user that the game is ready

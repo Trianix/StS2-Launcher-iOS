@@ -323,16 +323,28 @@ extern void* mono_compile_method(void *method);
 extern char* mono_method_full_name(void *method, int signature);
 
 static void sts2_copy_interp_body(Sts2InterpMethod *dst_target, Sts2InterpMethod *src_body) {
+    dst_target->method = src_body->method;
     dst_target->code = src_body->code;
     dst_target->func = src_body->func;
     dst_target->clauses = src_body->clauses;
     dst_target->data_items = src_body->data_items;
     dst_target->local_offsets = src_body->local_offsets;
+    dst_target->arg_offsets = src_body->arg_offsets;
     dst_target->clause_data_offsets = src_body->clause_data_offsets;
+    dst_target->jit_call_info = src_body->jit_call_info;
+    dst_target->jit_entry = src_body->jit_entry;
+    dst_target->llvmonly_unbox_entry = src_body->llvmonly_unbox_entry;
+    dst_target->rtype = src_body->rtype;
+    dst_target->param_types = src_body->param_types;
     dst_target->jinfo = src_body->jinfo;
+    dst_target->ftndesc = src_body->ftndesc;
+    dst_target->ftndesc_unbox = src_body->ftndesc_unbox;
+    dst_target->del_info = src_body->del_info;
     dst_target->locals_size = src_body->locals_size;
     dst_target->alloca_size = src_body->alloca_size;
     dst_target->num_clauses = src_body->num_clauses;
+    dst_target->param_count = src_body->param_count;
+    dst_target->hasthis = src_body->hasthis;
     dst_target->prof_flags = src_body->prof_flags;
     dst_target->code_type = src_body->code_type;
     dst_target->ref_slot_offset = src_body->ref_slot_offset;
@@ -342,8 +354,11 @@ static void sts2_copy_interp_body(Sts2InterpMethod *dst_target, Sts2InterpMethod
     dst_target->optimized_imethod = nullptr;
     dst_target->patchpoint_data = nullptr;
     dst_target->init_locals = src_body->init_locals;
+    dst_target->vararg = src_body->vararg;
     dst_target->optimized = 1;
     dst_target->needs_thread_attach = src_body->needs_thread_attach;
+    dst_target->is_invoke = src_body->is_invoke;
+    dst_target->is_verbose = src_body->is_verbose;
     __sync_synchronize();
     dst_target->transformed = 1;
 }
@@ -384,6 +399,14 @@ IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void
         sts2_copy_interp_body(src_imethod->optimized_imethod, compiled_dst);
     }
     sts2_copy_interp_body(src_imethod, compiled_dst);
+
+    char *src_name = mono_method_full_name(src_mono_method, 1);
+    char *dst_name = mono_method_full_name(dst_mono_method, 1);
+    NSLog(@"[STS2Launcher iOS] Detoured interp method %s -> %s",
+          src_name ? src_name : "<null>",
+          dst_name ? dst_name : "<null>");
+    if (src_name) free(src_name);
+    if (dst_name) free(dst_name);
 }
 
 }

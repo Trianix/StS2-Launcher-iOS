@@ -797,7 +797,7 @@ static void PatchSteamKitForIos(string steamKitPath)
     PatchProcessStartTime(steamKit);
 
     WriteModuleOverOriginal(steamKit, steamKitPath);
-    Console.WriteLine("Patched SteamKit2.dll for iOS: replaced Process.GetCurrentProcess().StartTime with DateTime.UtcNow; removed System.Diagnostics.Process reference");
+    Console.WriteLine("Patched SteamKit2.dll for iOS: replaced Process.GetCurrentProcess().StartTime with DateTime.UtcNow and cleared local variables");
 }
 
 static void PatchProcessStartTime(ModuleDefinition steamKit)
@@ -863,14 +863,32 @@ static void PatchProcessStartTime(ModuleDefinition steamKit)
     }
 
     ctor.Body.ExceptionHandlers.Clear();
-
-    var processAssemblyRef = steamKit.AssemblyReferences.FirstOrDefault(r => r.Name == "System.Diagnostics.Process");
-    if (processAssemblyRef != null)
-    {
-        steamKit.AssemblyReferences.Remove(processAssemblyRef);
-    }
+    ctor.Body.Variables.Clear();
+    ctor.Body.InitLocals = false;
 
     AssertNoProcessCalls(steamKit);
+    AssertNoProcessVariables(steamKit);
+}
+
+static void AssertNoProcessVariables(ModuleDefinition module)
+{
+    foreach (var type in module.Types.SelectMany(WalkTypes))
+    {
+        foreach (var method in type.Methods)
+        {
+            if (!method.HasBody)
+                continue;
+
+            foreach (var variable in method.Body.Variables)
+            {
+                if (variable.VariableType.FullName.Contains("System.Diagnostics.Process"))
+                {
+                    throw new InvalidOperationException(
+                        $"Forbidden System.Diagnostics.Process variable remains in {module.Name}: {type.FullName}::{method.Name} var {variable.Index}");
+                }
+            }
+        }
+    }
 }
 
 static void AssertNoProcessCalls(ModuleDefinition module)

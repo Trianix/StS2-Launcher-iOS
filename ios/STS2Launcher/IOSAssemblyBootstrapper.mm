@@ -64,6 +64,14 @@
                 
                 if (![fm fileExistsAtPath:dstFile]) {
                     [fm copyItemAtPath:srcFile toPath:dstFile error:nil];
+                } else if (![file isEqualToString:@"sts2.dll"]) {
+                    NSDictionary *srcAttr = [fm attributesOfItemAtPath:srcFile error:nil];
+                    NSDictionary *dstAttr = [fm attributesOfItemAtPath:dstFile error:nil];
+                    if (![srcAttr[NSFileSize] isEqualToNumber:dstAttr[NSFileSize]] ||
+                        [srcAttr[NSFileModificationDate] compare:dstAttr[NSFileModificationDate]] == NSOrderedDescending) {
+                        [fm removeItemAtPath:dstFile error:nil];
+                        [fm copyItemAtPath:srcFile toPath:dstFile error:nil];
+                    }
                 }
             }
         }

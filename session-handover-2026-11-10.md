@@ -82,6 +82,7 @@ Analysis of `app_output(12).log` identified two critical bugs:
 | `src/STS2Mobile/Patches/PlatformPatches.PlatformUtil.LocaleStrategy.cs` | Added `ApplyLocManagerCulturePatch` and `ApplyCultureInfoGetCultureInfoPatch`. |
 | `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs` | Added `CultureInfoFromThreeLetterCodePrefix` and `GetCultureInfoPrefix` handlers. |
 | `src/STS2Mobile/Patches/PlatformPatches.cs` | Registered `ApplyLocManagerCulturePatch` and `ApplyCultureInfoGetCultureInfoPatch`. |
+| `.github/workflows/build-ios.yml` | Switched runner to `macos-14` to avoid `macos-15` capacity constraints. |
 
 ---
 

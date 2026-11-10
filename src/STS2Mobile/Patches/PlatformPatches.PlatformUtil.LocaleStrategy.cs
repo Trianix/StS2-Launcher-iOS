@@ -262,6 +262,40 @@ internal static partial class PlatformPatches
         }
     }
 
+    private static void ApplyOneTimeInitializationPrewarmJitPatch(Harmony harmony)
+    {
+        if (!OperatingSystem.IsIOS())
+            return;
+
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var type = sts2Asm.GetType("MegaCrit.Sts2.Core.Helpers.OneTimeInitialization");
+            if (type == null)
+                return;
+
+            var method = type.GetMethod(
+                "PrewarmJit",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("OneTimeInitialization patch: PrewarmJit not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(PrewarmJitPrefix)))
+            );
+            PatchHelper.Log("Patched OneTimeInitialization.PrewarmJit (safe interpreter skip on iOS)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"OneTimeInitialization.PrewarmJit patch failed: {ex.Message}");
+        }
+    }
+
     private static void ApplyModelDbInitPatch(Harmony harmony)
     {
         try

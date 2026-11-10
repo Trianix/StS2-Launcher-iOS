@@ -3,6 +3,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
 #include <stdint.h>
+#include <exception>
 
 // Required by Godot 4.5.1 iOS static library (register_ios_api / unregister_ios_api)
 void godot_apple_embedded_plugins_initialize() {}
@@ -130,6 +131,44 @@ static void sts2_setup_alt_stack() {
     }
 }
 
+static void sts2_uncaught_objc_exception_handler(NSException *exception) {
+    fprintf(stderr, "\n========================================\n");
+    fprintf(stderr, "[CRASH] Uncaught NSException: %s\n", [[exception name] UTF8String] ?: "<unknown>");
+    fprintf(stderr, "Reason: %s\n", [[exception reason] UTF8String] ?: "<none>");
+    fprintf(stderr, "Call stack symbols:\n");
+    for (NSString *symbol in [exception callStackSymbols]) {
+        fprintf(stderr, "  %s\n", [symbol UTF8String]);
+    }
+    fprintf(stderr, "========================================\n");
+    fflush(stderr);
+    fflush(stdout);
+    fsync(STDERR_FILENO);
+}
+
+static void sts2_cpp_terminate_handler() {
+    fprintf(stderr, "\n========================================\n");
+    fprintf(stderr, "[CRASH] std::terminate called!\n");
+    void *frames[64];
+    int count = backtrace(frames, 64);
+    for (int i = 0; i < count; i++) {
+        Dl_info dl{};
+        if (dladdr(frames[i], &dl) && dl.dli_fname) {
+            uintptr_t base = (uintptr_t)(dl.dli_saddr ? dl.dli_saddr : dl.dli_fbase);
+            fprintf(stderr, "  #%02d %p %s`%s + 0x%lx\n",
+                    i, frames[i], dl.dli_fname,
+                    dl.dli_sname ? dl.dli_sname : "<unknown>",
+                    (unsigned long)((uintptr_t)frames[i] - base));
+        } else {
+            fprintf(stderr, "  #%02d %p\n", i, frames[i]);
+        }
+    }
+    fprintf(stderr, "========================================\n");
+    fflush(stderr);
+    fflush(stdout);
+    fsync(STDERR_FILENO);
+    abort();
+}
+
 static void sts2_install_crash_handlers() {
     sts2_setup_alt_stack();
 
@@ -145,6 +184,9 @@ static void sts2_install_crash_handlers() {
     sigaction(SIGILL, &sa, nullptr);
     sigaction(SIGFPE, &sa, nullptr);
     sigaction(SIGTRAP, &sa, nullptr);
+
+    NSSetUncaughtExceptionHandler(&sts2_uncaught_objc_exception_handler);
+    std::set_terminate(&sts2_cpp_terminate_handler);
 }
 
 extern "C" __attribute__((visibility("default"))) void sts2_reinstall_crash_handlers() {

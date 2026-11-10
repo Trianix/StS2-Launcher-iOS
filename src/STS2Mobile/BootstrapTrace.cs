@@ -15,6 +15,20 @@ internal static class BootstrapTrace
     private const long MaxBytes = 256L * 1024L;
     private static readonly object Lock = new();
 
+    static BootstrapTrace()
+    {
+        try
+        {
+            if (Console.Error is StreamWriter swErr)
+                swErr.AutoFlush = true;
+            if (Console.Out is StreamWriter swOut)
+                swOut.AutoFlush = true;
+        }
+        catch
+        {
+        }
+    }
+
     internal static string TracePath => GetTracePath();
 
     internal static void Log(string message)
@@ -28,6 +42,7 @@ internal static class BootstrapTrace
             try
             {
                 Console.Error.WriteLine($"[STS2Mobile] {message}");
+                Console.Error.Flush();
             }
             catch
             {

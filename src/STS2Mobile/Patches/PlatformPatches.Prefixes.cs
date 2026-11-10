@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
@@ -424,17 +426,85 @@ internal static partial class PlatformPatches
         return false; // Skip original method
     }
 
+    [DllImport("__Internal", EntryPoint = "sts2_reinstall_crash_handlers")]
+    private static extern void ReinstallNativeCrashHandlers();
+
+    private static void SafeReinstallNativeCrashHandlers()
+    {
+        if (OperatingSystem.IsIOS())
+        {
+            try
+            {
+                ReinstallNativeCrashHandlers();
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[STS2Mobile] Native handler reinstall notice: {ex.Message}");
+            }
+        }
+    }
+
+    private static int GetModelDependencyPriority(Type type)
+    {
+        try
+        {
+            var categoryType = ModelDb.GetCategoryType(type);
+            var name = categoryType?.Name;
+            return name switch
+            {
+                // Level 0: base models with zero cross-model lookups in static init
+                "MonsterModel" => 0,
+                "PotionModel" => 0,
+                "PowerModel" => 0,
+                "AfflictionModel" => 0,
+                "EnchantmentModel" => 0,
+                "CardModel" => 0,
+                "CardPoolModel" => 0,
+                "PotionPoolModel" => 0,
+                "RelicPoolModel" => 0,
+                "OrbModel" => 0,
+                "SingletonModel" => 0,
+                "ModifierModel" => 0,
+                "CharacterModel" => 0,
+                "ActModel" => 0,
+                "AchievementModel" => 0,
+                // Level 1: Relics (e.g. Cauldron references PotionModel)
+                "RelicModel" => 1,
+                // Level 2: Encounters and Events (e.g. BowlbugsNormal references MonsterModel, Darv references RelicModel)
+                "EncounterModel" => 2,
+                "EventModel" => 2,
+                _ => 3
+            };
+        }
+        catch
+        {
+            return 3;
+        }
+    }
+
     private static bool ExecuteEssentialPrefix()
     {
+        SafeReinstallNativeCrashHandlers();
         PatchHelper.Log("[OneTimeInitialization.ExecuteEssential] Entering ExecuteEssential...");
         return true; // Let original run
+    }
+
+    private static bool PrewarmJitPrefix()
+    {
+        if (OperatingSystem.IsIOS())
+        {
+            PatchHelper.Log("[OneTimeInitialization.PrewarmJit] Skipping PrewarmJit on iOS (pure Mono interpreter mode).");
+            return false; // Skip original method
+        }
+        return true;
     }
 
     private static bool ModelDbInitPrefix()
     {
         try
         {
-            PatchHelper.Log("[ModelDb.Init] Starting resilient ModelDb.Init...");
+            SafeReinstallNativeCrashHandlers();
+            PatchHelper.Log("[ModelDb.Init] Starting resilient dependency-ordered ModelDb.Init...");
             var field = typeof(ModelDb).GetField(
                 "_contentById",
                 BindingFlags.NonPublic | BindingFlags.Static
@@ -469,32 +539,65 @@ internal static partial class PlatformPatches
                 return false;
             }
 
-            PatchHelper.Log($"[ModelDb.Init] Registering {subtypes.Length} model subtypes...");
+            // Sort subtypes by dependency priority (Monsters/Potions/Cards first, then Relics, then Encounters/Events)
+            var sortedSubtypes = subtypes
+                .Where(t => t != null)
+                .OrderBy(GetModelDependencyPriority)
+                .ToList();
+
+            PatchHelper.Log($"[ModelDb.Init] Registering {sortedSubtypes.Count} model subtypes in dependency order...");
             int succeeded = 0;
             int failed = 0;
+            var deferred = new List<Type>();
 
-            for (int i = 0; i < subtypes.Length; i++)
+            // Pass 1: instantiate in dependency order
+            for (int i = 0; i < sortedSubtypes.Count; i++)
             {
-                var type = subtypes[i];
-                if (type == null)
-                    continue;
-
+                var type = sortedSubtypes[i];
                 try
                 {
                     var id = ModelDb.GetId(type);
-                    var model = (AbstractModel)Activator.CreateInstance(type);
-                    contentById[id] = model;
-                    succeeded++;
+                    if (!contentById.ContainsKey(id))
+                    {
+                        var model = (AbstractModel)Activator.CreateInstance(type);
+                        contentById[id] = model;
+                        succeeded++;
+                    }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    failed++;
-                    PatchHelper.Log($"[ModelDb.Init] Failed to instantiate {type.FullName}: {ex.Message}");
+                    // Defer for pass 2 retry once all other models are in dictionary
+                    deferred.Add(type);
                 }
 
-                if ((i + 1) % 250 == 0 || i + 1 == subtypes.Length)
+                if ((i + 1) % 250 == 0 || i + 1 == sortedSubtypes.Count)
                 {
-                    PatchHelper.Log($"[ModelDb.Init] Progress: {i + 1}/{subtypes.Length} instantiated ({succeeded} ok, {failed} failed).");
+                    PatchHelper.Log($"[ModelDb.Init] Pass 1 progress: {i + 1}/{sortedSubtypes.Count} ({succeeded} ok, {deferred.Count} deferred).");
+                }
+            }
+
+            // Pass 2: retry deferred models now that all base models are registered
+            if (deferred.Count > 0)
+            {
+                PatchHelper.Log($"[ModelDb.Init] Pass 2: retrying {deferred.Count} deferred models...");
+                foreach (var type in deferred)
+                {
+                    try
+                    {
+                        var id = ModelDb.GetId(type);
+                        if (!contentById.ContainsKey(id))
+                        {
+                            var model = (AbstractModel)Activator.CreateInstance(type);
+                            contentById[id] = model;
+                            succeeded++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        var innerMsg = ex.InnerException != null ? $" (Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message})" : "";
+                        PatchHelper.Log($"[ModelDb.Init] Skipped failing model {type.FullName}: {ex.GetType().Name}: {ex.Message}{innerMsg}");
+                    }
                 }
             }
 

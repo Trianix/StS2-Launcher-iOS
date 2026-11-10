@@ -98,6 +98,7 @@ internal static partial class PlatformPatches
         ApplyLoadLocCompletionFilePatch(harmony);
         ApplyLocManagerInitializePatch(harmony);
         ApplyOneTimeInitializationExecuteEssentialPatch(harmony);
+        ApplyOneTimeInitializationPrewarmJitPatch(harmony);
         ApplyModelDbInitPatch(harmony);
         ApplyModelDbInitIdsPatch(harmony);
         ApplyModelIdSerializationCacheInitPatch(harmony);

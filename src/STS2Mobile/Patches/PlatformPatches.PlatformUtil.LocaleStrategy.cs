@@ -118,4 +118,116 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"CultureInfo.GetCultureInfo patch failed: {ex.Message}");
         }
     }
+
+    private static void ApplyLoadLocFormattersPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
+            if (locManagerType == null)
+            {
+                PatchHelper.Log("Locale fix: LocManager not found, skipping LoadLocFormatters patch");
+                return;
+            }
+
+            var method = locManagerType.GetMethod(
+                "LoadLocFormatters",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("Locale fix: LoadLocFormatters not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(LoadLocFormattersPrefix)))
+            );
+            PatchHelper.Log(
+                "Patched LocManager.LoadLocFormatters (resilient formatter init)"
+            );
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"LocManager.LoadLocFormatters patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyLoadLocCompletionFilePatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
+            if (locManagerType == null)
+            {
+                PatchHelper.Log("Locale fix: LocManager not found, skipping LoadLocCompletionFile patch");
+                return;
+            }
+
+            var method = locManagerType.GetMethod(
+                "LoadLocCompletionFile",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("Locale fix: LoadLocCompletionFile not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(LoadLocCompletionFilePrefix)))
+            );
+            PatchHelper.Log(
+                "Patched LocManager.LoadLocCompletionFile (graceful missing file check)"
+            );
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"LocManager.LoadLocCompletionFile patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyLocManagerSmartFormatPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
+            if (locManagerType == null)
+            {
+                PatchHelper.Log("Locale fix: LocManager not found, skipping SmartFormat patch");
+                return;
+            }
+
+            var method = locManagerType.GetMethod(
+                "SmartFormat",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("Locale fix: LocManager.SmartFormat not found, skipping");
+                return;
+            }
+
+            var prefix = Prefix(nameof(SmartFormatPrefix));
+            var finalizer = Prefix(nameof(SmartFormatFinalizer));
+
+            harmony.Patch(
+                method,
+                prefix: prefix != null ? new HarmonyMethod(prefix) : null,
+                finalizer: finalizer != null ? new HarmonyMethod(finalizer) : null
+            );
+            PatchHelper.Log(
+                "Patched LocManager.SmartFormat (fallback and crash shield)"
+            );
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"LocManager.SmartFormat patch failed: {ex.Message}");
+        }
+    }
 }

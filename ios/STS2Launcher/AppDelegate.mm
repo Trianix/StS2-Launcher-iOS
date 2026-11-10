@@ -132,6 +132,12 @@ static void sts2_install_crash_handlers() {
     sigaction(SIGTRAP, &sa, nullptr);
 }
 
+extern "C" __attribute__((visibility("default"))) void sts2_reinstall_crash_handlers() {
+    sts2_install_crash_handlers();
+    fprintf(stderr, "[STS2Launcher iOS] Native crash signal handlers reinstalled.\n");
+    fflush(stderr);
+}
+
 static sigjmp_buf sJitProbeJmp;
 static void sts2_jit_probe_handler(int sig) { siglongjmp(sJitProbeJmp, sig); }
 
@@ -461,6 +467,8 @@ static AppDelegate *sSharedDelegate = nil;
     }
     sts2_install_crash_handlers();
     sts2_install_mono_log_hooks();
+    setenv("MONO_LOG_LEVEL", "info", 0);
+    setenv("MONO_LOG_MASK", "asm,type,dll", 0);
     setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1", 0);
     setenv("STS2_SKIP_JIT_WAIT", "1", 1);
     setenv("STS2_MONO_FORCE_INTERP", "1", 1);

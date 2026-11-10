@@ -94,5 +94,8 @@ internal static partial class PlatformPatches
         ApplyNullPlatformLanguagePatch(harmony);
         ApplyLocManagerCulturePatch(harmony);
         ApplyCultureInfoGetCultureInfoPatch(harmony);
+        ApplyLoadLocFormattersPatch(harmony);
+        ApplyLoadLocCompletionFilePatch(harmony);
+        ApplyLocManagerSmartFormatPatch(harmony);
     }
 }

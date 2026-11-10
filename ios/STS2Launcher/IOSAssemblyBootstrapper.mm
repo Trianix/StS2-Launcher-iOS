@@ -96,6 +96,7 @@
             @"protobuf-net.Core.dll",
             @"System.IO.Hashing.dll",
             @"System.Private.CoreLib.dll",
+            @"System.Runtime.CompilerServices.Unsafe.dll",
             @"ZstdSharp.dll",
             @"GodotSharp.dll"
         ];

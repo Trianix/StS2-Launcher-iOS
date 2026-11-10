@@ -48,6 +48,10 @@ cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$UPSTREAM_PUBLISH_DIR/
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$IOS_BCL_ASSETS_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$IOS_BCL_ASSETS_DIR/"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$IOS_BCL_ASSETS_DIR/" 2>/dev/null || true
+if [ -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" ]; then
+    cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$UPSTREAM_PUBLISH_DIR/"
+    cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$IOS_BCL_ASSETS_DIR/"
+fi
 
 echo "Patching MonoMod.Core for iOS..."
 dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$IOS_BCL_ASSETS_DIR/MonoMod.Core.dll"
@@ -220,6 +224,10 @@ for dll in SteamKit2.dll protobuf-net.dll protobuf-net.Core.dll System.IO.Hashin
     fi
 done
 cp -f "$IOS_BUNDLE_BCL_DIR/MonoMod."*.dll "$ASSEMBLIES_DIR/" 2>/dev/null || true
+if [ -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" ]; then
+    cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$ASSEMBLIES_DIR/"
+    cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$IOS_BUNDLE_BCL_DIR/"
+fi
 # Stage metadata-only reference sts2.dll into dotnet_bcl so initial launcher boot can resolve types before any game branch is downloaded.
 # Never place sts2.dll in assemblies/ so IOSAssemblyBootstrapper will not overwrite a staged runtime-pack sts2.dll.
 if [ -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" ]; then

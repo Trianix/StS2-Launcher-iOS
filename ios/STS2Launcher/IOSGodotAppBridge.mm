@@ -278,6 +278,11 @@ IOS_BRIDGE_EXPORT int* __errno_location(void) {
     return __error();
 }
 
+IOS_BRIDGE_EXPORT int sts2_test_native_callback_roundtrip(Sts2NativeCallbackFn fn, int val) {
+    if (!fn) return -1;
+    return fn(val);
+}
+
 struct Sts2InterpMethod {
     void *method;
     Sts2InterpMethod *next_jit_code_hash;

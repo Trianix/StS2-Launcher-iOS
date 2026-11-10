@@ -857,3 +857,370 @@ index f486998..dab5889 100644
  #else
  	g_assert_not_reached ();
  	return NULL;
+diff --git a/src/mono/mono/mini/exceptions-arm64.c b/src/mono/mono/mini/exceptions-arm64.c
+index 28ce79c..d3cb773 100644
+--- a/src/mono/mono/mini/exceptions-arm64.c
++++ b/src/mono/mono/mini/exceptions-arm64.c
+@@ -25,9 +25,286 @@
+ 
+ #ifndef DISABLE_JIT
+ 
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++
++#if defined(__APPLE__)
++#define CSYM(x) "_" #x
++#else
++#define CSYM(x) #x
++#endif
++
++void mono_arm_throw_exception (gpointer arg, host_mgreg_t pc, host_mgreg_t *int_regs, gdouble *fp_regs, gboolean corlib, gboolean rethrow, gboolean preserve_ips);
++
++static __attribute__((naked, noinline, used))
++void mono_restore_context_arm64 (void)
++{
++	__asm__ volatile (
++		"mov x16, x0\n"
++		"ldr x17, [x16, #776]\n"
++		"cbz x17, 1f\n"
++		"ldp q0, q1, [x16, #256]\n"
++		"ldp q2, q3, [x16, #288]\n"
++		"ldp q4, q5, [x16, #320]\n"
++		"ldp q6, q7, [x16, #352]\n"
++		"ldp q8, q9, [x16, #384]\n"
++		"ldp q10, q11, [x16, #416]\n"
++		"ldp q12, q13, [x16, #448]\n"
++		"ldp q14, q15, [x16, #480]\n"
++		"ldp q16, q17, [x16, #512]\n"
++		"ldp q18, q19, [x16, #544]\n"
++		"ldp q20, q21, [x16, #576]\n"
++		"ldp q22, q23, [x16, #608]\n"
++		"ldp q24, q25, [x16, #640]\n"
++		"ldp q26, q27, [x16, #672]\n"
++		"ldp q28, q29, [x16, #704]\n"
++		"ldp q30, q31, [x16, #736]\n"
++		"1:\n"
++		"ldp x0, x1, [x16, #0]\n"
++		"ldp x2, x3, [x16, #16]\n"
++		"ldp x4, x5, [x16, #32]\n"
++		"ldp x6, x7, [x16, #48]\n"
++		"ldp x8, x9, [x16, #64]\n"
++		"ldp x10, x11, [x16, #80]\n"
++		"ldp x12, x13, [x16, #96]\n"
++		"ldp x14, x15, [x16, #112]\n"
++		"ldr x17, [x16, #136]\n"
++		"ldp x18, x19, [x16, #144]\n"
++		"ldp x20, x21, [x16, #160]\n"
++		"ldp x22, x23, [x16, #176]\n"
++		"ldp x24, x25, [x16, #192]\n"
++		"ldp x26, x27, [x16, #208]\n"
++		"ldp x28, x29, [x16, #224]\n"
++		"ldr x30, [x16, #240]\n"
++		"ldr x17, [x16, #768]\n"
++		"ldr x16, [x16, #248]\n"
++		"mov sp, x16\n"
++		"br x17\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_call_filter_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #352\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"str x0, [x29, #336]\n"
++		"stp x19, x20, [x29, #16]\n"
++		"stp x21, x22, [x29, #32]\n"
++		"stp x23, x24, [x29, #48]\n"
++		"stp x25, x26, [x29, #64]\n"
++		"stp x27, x28, [x29, #80]\n"
++		"stp d8, d9, [x29, #272]\n"
++		"stp d10, d11, [x29, #288]\n"
++		"stp d12, d13, [x29, #304]\n"
++		"stp d14, d15, [x29, #320]\n"
++		"ldp x19, x20, [x0, #152]\n"
++		"ldp x21, x22, [x0, #168]\n"
++		"ldp x23, x24, [x0, #184]\n"
++		"ldp x25, x26, [x0, #200]\n"
++		"ldp x27, x28, [x0, #216]\n"
++		"ldr x16, [x0, #776]\n"
++		"cbz x16, 1f\n"
++		"ldr d8, [x0, #384]\n"
++		"ldr d9, [x0, #400]\n"
++		"ldr d10, [x0, #416]\n"
++		"ldr d11, [x0, #432]\n"
++		"ldr d12, [x0, #448]\n"
++		"ldr d13, [x0, #464]\n"
++		"ldr d14, [x0, #480]\n"
++		"ldr d15, [x0, #496]\n"
++		"1:\n"
++		"ldr x29, [x0, #232]\n"
++		"blr x1\n"
++		"mov x19, x0\n"
++		"mov x29, sp\n"
++		"ldp x21, x22, [x29, #32]\n"
++		"ldp x23, x24, [x29, #48]\n"
++		"ldp x25, x26, [x29, #64]\n"
++		"ldp x27, x28, [x29, #80]\n"
++		"ldp d8, d9, [x29, #272]\n"
++		"ldp d10, d11, [x29, #288]\n"
++		"ldp d12, d13, [x29, #304]\n"
++		"ldp d14, d15, [x29, #320]\n"
++		"mov x0, x19\n"
++		"ldp x19, x20, [x29, #16]\n"
++		"ldp x29, x30, [sp, #0]\n"
++		"add sp, sp, #352\n"
++		"ret\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_throw_exception_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #352\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x0, x1, [x29, #16]\n"
++		"stp x2, x3, [x29, #32]\n"
++		"stp x4, x5, [x29, #48]\n"
++		"stp x6, x7, [x29, #64]\n"
++		"stp x8, x9, [x29, #80]\n"
++		"stp x10, x11, [x29, #96]\n"
++		"stp x12, x13, [x29, #112]\n"
++		"stp x14, x15, [x29, #128]\n"
++		"stp x16, x17, [x29, #144]\n"
++		"stp x18, x19, [x29, #160]\n"
++		"stp x20, x21, [x29, #176]\n"
++		"stp x22, x23, [x29, #192]\n"
++		"stp x24, x25, [x29, #208]\n"
++		"stp x26, x27, [x29, #224]\n"
++		"stp x28, x29, [x29, #240]\n"
++		"str x30, [x29, #256]\n"
++		"add x16, x29, #352\n"
++		"str x16, [x29, #264]\n"
++		"stp d8, d9, [x29, #272]\n"
++		"stp d10, d11, [x29, #288]\n"
++		"stp d12, d13, [x29, #304]\n"
++		"stp d14, d15, [x29, #320]\n"
++		"ldr x1, [x29, #8]\n"
++		"add x2, x29, #16\n"
++		"add x3, x29, #272\n"
++		"mov x4, #0\n"
++		"mov x5, #0\n"
++		"mov x6, #0\n"
++		"bl " CSYM(mono_arm_throw_exception) "\n"
++		"brk #0\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_rethrow_exception_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #352\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x0, x1, [x29, #16]\n"
++		"stp x2, x3, [x29, #32]\n"
++		"stp x4, x5, [x29, #48]\n"
++		"stp x6, x7, [x29, #64]\n"
++		"stp x8, x9, [x29, #80]\n"
++		"stp x10, x11, [x29, #96]\n"
++		"stp x12, x13, [x29, #112]\n"
++		"stp x14, x15, [x29, #128]\n"
++		"stp x16, x17, [x29, #144]\n"
++		"stp x18, x19, [x29, #160]\n"
++		"stp x20, x21, [x29, #176]\n"
++		"stp x22, x23, [x29, #192]\n"
++		"stp x24, x25, [x29, #208]\n"
++		"stp x26, x27, [x29, #224]\n"
++		"stp x28, x29, [x29, #240]\n"
++		"str x30, [x29, #256]\n"
++		"add x16, x29, #352\n"
++		"str x16, [x29, #264]\n"
++		"stp d8, d9, [x29, #272]\n"
++		"stp d10, d11, [x29, #288]\n"
++		"stp d12, d13, [x29, #304]\n"
++		"stp d14, d15, [x29, #320]\n"
++		"ldr x1, [x29, #8]\n"
++		"add x2, x29, #16\n"
++		"add x3, x29, #272\n"
++		"mov x4, #0\n"
++		"mov x5, #1\n"
++		"mov x6, #0\n"
++		"bl " CSYM(mono_arm_throw_exception) "\n"
++		"brk #0\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_rethrow_preserve_exception_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #352\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x0, x1, [x29, #16]\n"
++		"stp x2, x3, [x29, #32]\n"
++		"stp x4, x5, [x29, #48]\n"
++		"stp x6, x7, [x29, #64]\n"
++		"stp x8, x9, [x29, #80]\n"
++		"stp x10, x11, [x29, #96]\n"
++		"stp x12, x13, [x29, #112]\n"
++		"stp x14, x15, [x29, #128]\n"
++		"stp x16, x17, [x29, #144]\n"
++		"stp x18, x19, [x29, #160]\n"
++		"stp x20, x21, [x29, #176]\n"
++		"stp x22, x23, [x29, #192]\n"
++		"stp x24, x25, [x29, #208]\n"
++		"stp x26, x27, [x29, #224]\n"
++		"stp x28, x29, [x29, #240]\n"
++		"str x30, [x29, #256]\n"
++		"add x16, x29, #352\n"
++		"str x16, [x29, #264]\n"
++		"stp d8, d9, [x29, #272]\n"
++		"stp d10, d11, [x29, #288]\n"
++		"stp d12, d13, [x29, #304]\n"
++		"stp d14, d15, [x29, #320]\n"
++		"ldr x1, [x29, #8]\n"
++		"add x2, x29, #16\n"
++		"add x3, x29, #272\n"
++		"mov x4, #0\n"
++		"mov x5, #1\n"
++		"mov x6, #1\n"
++		"bl " CSYM(mono_arm_throw_exception) "\n"
++		"brk #0\n"
++	);
++}
++
++static __attribute__((naked, noinline, used))
++void mono_throw_corlib_exception_arm64 (void)
++{
++	__asm__ volatile (
++		"sub sp, sp, #352\n"
++		"stp x29, x30, [sp, #0]\n"
++		"mov x29, sp\n"
++		"stp x0, x1, [x29, #16]\n"
++		"stp x2, x3, [x29, #32]\n"
++		"stp x4, x5, [x29, #48]\n"
++		"stp x6, x7, [x29, #64]\n"
++		"stp x8, x9, [x29, #80]\n"
++		"stp x10, x11, [x29, #96]\n"
++		"stp x12, x13, [x29, #112]\n"
++		"stp x14, x15, [x29, #128]\n"
++		"stp x16, x17, [x29, #144]\n"
++		"stp x18, x19, [x29, #160]\n"
++		"stp x20, x21, [x29, #176]\n"
++		"stp x22, x23, [x29, #192]\n"
++		"stp x24, x25, [x29, #208]\n"
++		"stp x26, x27, [x29, #224]\n"
++		"stp x28, x29, [x29, #240]\n"
++		"str x30, [x29, #256]\n"
++		"add x16, x29, #352\n"
++		"str x16, [x29, #264]\n"
++		"stp d8, d9, [x29, #272]\n"
++		"stp d10, d11, [x29, #288]\n"
++		"stp d12, d13, [x29, #304]\n"
++		"stp d14, d15, [x29, #320]\n"
++		"str x1, [x29, #256]\n"
++		"add x2, x29, #16\n"
++		"add x3, x29, #272\n"
++		"mov x4, #1\n"
++		"mov x5, #0\n"
++		"mov x6, #0\n"
++		"bl " CSYM(mono_arm_throw_exception) "\n"
++		"brk #0\n"
++	);
++}
++
++#endif
++
+ gpointer
+ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_restore_context_arm64);
++#else
+ 	guint8 *start, *code;
+ 	MonoJumpInfo *ji = NULL;
+ 	GSList *unwind_ops = NULL;
+@@ -73,11 +350,17 @@ mono_arch_get_restore_context (MonoTrampInfo **info, gboolean aot)
+ 		*info = mono_tramp_info_create ("restore_context", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+ 
+ 	return MINI_ADDR_TO_FTNPTR (start);
++#endif
+ }
+ 
+ gpointer
+ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_call_filter_arm64);
++#else
+ 	guint8 *code;
+ 	guint8* start;
+ 	int i, size, offset, gregs_offset, fregs_offset, ctx_offset, num_fregs, frame_size;
+@@ -164,6 +447,7 @@ mono_arch_get_call_filter (MonoTrampInfo **info, gboolean aot)
+ 		*info = mono_tramp_info_create ("call_filter", start, GPTRDIFF_TO_UINT32 (code - start), ji, unwind_ops);
+ 
+ 	return MINI_ADDR_TO_FTNPTR (start);
++#endif
+ }
+ 
+ static gpointer
+@@ -273,25 +557,49 @@ get_throw_trampoline (int size, gboolean corlib, gboolean rethrow, gboolean llvm
+ gpointer
+ mono_arch_get_throw_exception (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_throw_exception_arm64);
++#else
+ 	return get_throw_trampoline (256, FALSE, FALSE, FALSE, FALSE, "throw_exception", info, aot, FALSE);
++#endif
+ }
+ 
+ gpointer
+ mono_arch_get_rethrow_exception (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_rethrow_exception_arm64);
++#else
+ 	return get_throw_trampoline (256, FALSE, TRUE, FALSE, FALSE, "rethrow_exception", info, aot, FALSE);
++#endif
+ }
+ 
+ gpointer
+ mono_arch_get_rethrow_preserve_exception (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_rethrow_preserve_exception_arm64);
++#else
+ 	return get_throw_trampoline (256, FALSE, TRUE, FALSE, FALSE, "rethrow_preserve_exception", info, aot, TRUE);
++#endif
+ }
+ 
+ gpointer
+ mono_arch_get_throw_corlib_exception (MonoTrampInfo **info, gboolean aot)
+ {
++#if defined(TARGET_ARM64) || defined(__aarch64__)
++	if (info)
++		*info = NULL;
++	return (gpointer)MINI_ADDR_TO_FTNPTR ((gpointer)mono_throw_corlib_exception_arm64);
++#else
+ 	return get_throw_trampoline (256, TRUE, FALSE, FALSE, FALSE, "throw_corlib_exception", info, aot, FALSE);
++#endif
+ }
+ 
+ GSList*

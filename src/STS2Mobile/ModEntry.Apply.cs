@@ -51,6 +51,15 @@ public static partial class ModEntry
             BootstrapTrace.Log("Finished startup patch orchestration");
             LauncherRuntimePatchValidationEvidence.Write(RuntimeDataDirectory, patchResult);
 
+            try
+            {
+                STS2Mobile.Diagnostics.ExceptionSelfTest.Run(harmony);
+            }
+            catch (Exception ex)
+            {
+                BootstrapTrace.Log($"ExceptionSelfTest encountered unexpected error: {ex}");
+            }
+
             if (patchResult.CriticalFailed)
             {
                 var reason = "Critical startup patches failed:\n"

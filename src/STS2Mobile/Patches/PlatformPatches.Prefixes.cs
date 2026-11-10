@@ -420,7 +420,8 @@ internal static partial class PlatformPatches
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[LocManager.Initialize] Error: {ex}");
+            PatchHelper.Log($"[LocManager.Initialize] FATAL: Failed to initialize LocManager: {ex}");
+            throw;
         }
 
         return false; // Skip original method
@@ -564,9 +565,10 @@ internal static partial class PlatformPatches
                         succeeded++;
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Defer for pass 2 retry once all other models are in dictionary
+                    var inner = ex.InnerException != null ? $" (Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message})" : "";
+                    PatchHelper.Log($"[ModelDb.Init] Pass 1 deferral: {type.FullName}: {ex.GetType().Name}: {ex.Message}{inner}");
                     deferred.Add(type);
                 }
 
@@ -595,17 +597,21 @@ internal static partial class PlatformPatches
                     catch (Exception ex)
                     {
                         failed++;
-                        var innerMsg = ex.InnerException != null ? $" (Inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message})" : "";
-                        PatchHelper.Log($"[ModelDb.Init] Skipped failing model {type.FullName}: {ex.GetType().Name}: {ex.Message}{innerMsg}");
+                        PatchHelper.Log($"[ModelDb.Init] PERMANENT FAILURE: Model {type.FullName} failed registration: {ex}");
                     }
                 }
             }
 
+            if (failed > 0)
+            {
+                PatchHelper.Log($"[ModelDb.Init] SEVERE WARNING: {failed} models permanently failed to register! Gameplay may throw KeyNotFoundException.");
+            }
             PatchHelper.Log($"[ModelDb.Init] ModelDb initialization complete. Total registered: {contentById.Count} ({succeeded} ok, {failed} failed).");
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[ModelDb.Init] Resilient ModelDb.Init encountered unexpected error: {ex}");
+            PatchHelper.Log($"[ModelDb.Init] FATAL: Resilient ModelDb.Init encountered unexpected error: {ex}");
+            throw;
         }
 
         return false; // Skip original method
@@ -651,15 +657,20 @@ internal static partial class PlatformPatches
                 catch (Exception ex)
                 {
                     failed++;
-                    PatchHelper.Log($"[ModelDb.InitIds] Failed to InitId for {kvp.Key}: {ex.Message}");
+                    PatchHelper.Log($"[ModelDb.InitIds] Failed to InitId for {kvp.Key}: {ex}");
                 }
             }
 
+            if (failed > 0)
+            {
+                PatchHelper.Log($"[ModelDb.InitIds] WARNING: {failed} models failed InitId!");
+            }
             PatchHelper.Log($"[ModelDb.InitIds] ModelDb.InitIds complete. {succeeded} initialized, {failed} failed.");
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[ModelDb.InitIds] Resilient InitIds encountered unexpected error: {ex}");
+            PatchHelper.Log($"[ModelDb.InitIds] FATAL: Resilient InitIds encountered unexpected error: {ex}");
+            throw;
         }
 
         return false; // Skip original method

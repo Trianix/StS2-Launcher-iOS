@@ -24,6 +24,8 @@ IOS_BRIDGE_EXPORT void ios_get_safe_area_insets(float *top, float *bottom, float
 IOS_BRIDGE_EXPORT void ios_restart_app(void);
 IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path, const char *source);
 IOS_BRIDGE_EXPORT bool ios_get_or_create_device_key(uint8_t *key_out, int key_len);
+typedef int (*Sts2NativeCallbackFn)(int val);
+IOS_BRIDGE_EXPORT int sts2_test_native_callback_roundtrip(Sts2NativeCallbackFn fn, int val);
 
 #ifdef __cplusplus
 }

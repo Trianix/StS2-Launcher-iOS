@@ -464,4 +464,62 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"NGame.LaunchMainMenu patch failed: {ex.Message}");
         }
     }
+    private static void ApplyMainMenuReadyPatch(Harmony harmony)
+    {
+        try
+        {
+            var method = typeof(MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu).GetMethod(
+                "_Ready",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("NMainMenu._Ready patch: _Ready method not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(MainMenuReadyPrefix))),
+                finalizer: new HarmonyMethod(Prefix(nameof(MainMenuReadyFinalizer)))
+            );
+            PatchHelper.Log("Patched NMainMenu._Ready (unique node resolver and resilient initialization finalizer)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"NMainMenu._Ready patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyTransitionPatch(Harmony harmony)
+    {
+        try
+        {
+            var method = typeof(NTransition).GetMethod(
+                "FadeIn",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                binder: null,
+                types: new[] { typeof(float), typeof(string), typeof(Nullable<System.Threading.CancellationToken>) },
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("NTransition.FadeIn patch: FadeIn method not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(TransitionFadeInPrefix)))
+            );
+            PatchHelper.Log("Patched NTransition.FadeIn (dismissed transition fast completion)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"NTransition.FadeIn patch failed: {ex.Message}");
+        }
+    }
 }

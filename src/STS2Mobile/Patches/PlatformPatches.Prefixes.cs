@@ -1078,29 +1078,28 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"[LaunchMainMenu] game.RootSceneContainer is already populated: {rootSceneContainer}");
         }
 
-        // 3. Resolve Transition if missing
-        if (game.Transition == null)
-        {
-            var transition = game.GetNodeOrNull<NTransition>("%GameTransitionRect")
-                ?? game.GetNodeOrNull<NTransition>("GameTransitionRect");
+        // 3. Resolve Transition if missing, and dismiss overlay
+        var activeTransition = game.Transition
+            ?? game.GetNodeOrNull<NTransition>("%GameTransitionRect")
+            ?? game.GetNodeOrNull<NTransition>("GameTransitionRect");
 
-            if (transition == null)
+        if (activeTransition == null)
+        {
+            foreach (var child in game.GetChildren())
             {
-                foreach (var child in game.GetChildren())
+                if (child is NTransition tr)
                 {
-                    if (child is NTransition tr)
-                    {
-                        transition = tr;
-                        break;
-                    }
+                    activeTransition = tr;
+                    break;
                 }
             }
+        }
 
-            if (transition != null)
-            {
-                SetTransitionInternal(game, transition);
-                PatchHelper.Log($"[LaunchMainMenu] Transition resolved: {transition}");
-            }
+        if (activeTransition != null)
+        {
+            SetTransitionInternal(game, activeTransition);
+            PatchHelper.Log($"[LaunchMainMenu] Transition resolved: {activeTransition}");
+            DismissTransition(activeTransition);
         }
 
         // 4. Preload main menu essentials
@@ -1150,6 +1149,9 @@ internal static partial class PlatformPatches
             throw new InvalidOperationException("Failed to instantiate NMainMenu");
         }
 
+        // Ensure unique names in owner so GetNode("%Name") resolves properly for all child components
+        EnsureUniqueNamesInOwner(mainMenu, mainMenu);
+
         // 6. Set current scene in RootSceneContainer
         PatchHelper.Log("[LaunchMainMenu] Attaching NMainMenu to RootSceneContainer...");
         if (rootSceneContainer != null)
@@ -1164,6 +1166,12 @@ internal static partial class PlatformPatches
             {
                 game.AddChild(mainMenu);
             }
+        }
+
+        // Ensure transition overlay remains dismissed and does not obscure MainMenu
+        if (game.Transition != null)
+        {
+            DismissTransition(game.Transition);
         }
 
         // Register scene with launcher readiness tracking
@@ -1211,5 +1219,159 @@ internal static partial class PlatformPatches
         }
 
         PatchHelper.Log("[LaunchMainMenu] SafeLaunchMainMenuAsync completed successfully!");
+    }
+
+    internal static void DismissTransition(NTransition transition)
+    {
+        if (transition == null)
+            return;
+
+        try
+        {
+            transition.Visible = false;
+            try
+            {
+                var inTransProp = typeof(NTransition).GetProperty("InTransition", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                inTransProp?.SetValue(transition, false);
+            }
+            catch { }
+            transition.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+            if (transition.Material is ShaderMaterial mat)
+            {
+                mat.SetShaderParameter(new StringName("_threshold"), 0);
+            }
+
+            foreach (var child in transition.GetChildren())
+            {
+                if (child is CanvasItem ci)
+                {
+                    ci.Visible = false;
+                }
+                if (child is Control c)
+                {
+                    c.MouseFilter = Control.MouseFilterEnum.Ignore;
+                }
+            }
+            PatchHelper.Log("[LaunchMainMenu] GameTransitionRect overlay dismissed and disabled.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] DismissTransition warning: {ex.Message}");
+        }
+    }
+
+    internal static void EnsureUniqueNamesInOwner(Node current, Node owner)
+    {
+        if (current == null || owner == null)
+            return;
+
+        foreach (var child in current.GetChildren())
+        {
+            try
+            {
+                if (child != owner)
+                {
+                    child.Owner = owner;
+                    child.UniqueNameInOwner = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[EnsureUniqueNamesInOwner] {child.Name}: {ex.Message}");
+            }
+            EnsureUniqueNamesInOwner(child, owner);
+        }
+    }
+
+    private static void MainMenuReadyPrefix(NMainMenu __instance)
+    {
+        try
+        {
+            EnsureUniqueNamesInOwner(__instance, __instance);
+            PatchHelper.Log("[MainMenuReadyPrefix] Unique names registered for NMainMenu children.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[MainMenuReadyPrefix] EnsureUniqueNamesInOwner warning: {ex.Message}");
+        }
+    }
+
+    private static Exception MainMenuReadyFinalizer(NMainMenu __instance, Exception __exception)
+    {
+        if (__exception != null)
+        {
+            PatchHelper.Log($"[MainMenuReadyFinalizer] Caught exception in NMainMenu._Ready: {__exception}. Executing recovery fallback...");
+
+            try
+            {
+                var audioManager = MegaCrit.Sts2.Core.Nodes.Audio.NAudioManager.Instance;
+                if (audioManager != null)
+                {
+                    audioManager.PlayMusic("event:/music/menu_update");
+                    PatchHelper.Log("[MainMenuReadyFinalizer] Fallback PlayMusic invoked.");
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback PlayMusic error: {ex.Message}");
+            }
+
+            try
+            {
+                var submenusProp = typeof(NMainMenu).GetProperty("SubmenuStack");
+                var submenus = submenusProp?.GetValue(__instance) as MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack
+                    ?? __instance.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack>("%Submenus")
+                    ?? __instance.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack>("Submenus");
+                if (submenus != null)
+                {
+                    submenus.InitializeForMainMenu(__instance);
+                    PatchHelper.Log("[MainMenuReadyFinalizer] Fallback SubmenuStack initialized.");
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback SubmenuStack error: {ex.Message}");
+            }
+
+            try
+            {
+                __instance.RefreshButtons();
+                PatchHelper.Log("[MainMenuReadyFinalizer] Fallback RefreshButtons invoked.");
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback RefreshButtons error: {ex.Message}");
+            }
+
+            try
+            {
+                var game = NGame.Instance;
+                if (game?.Transition != null)
+                {
+                    DismissTransition(game.Transition);
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback DismissTransition error: {ex.Message}");
+            }
+
+            return null; // Suppress the exception so Godot C# bridge does not fail
+        }
+
+        PatchHelper.Log("[MainMenuReadyFinalizer] NMainMenu._Ready completed successfully.");
+        return null;
+    }
+
+    private static bool TransitionFadeInPrefix(NTransition __instance, ref Task __result)
+    {
+        if (MobilePlatform.IsMobile && !__instance.Visible)
+        {
+            DismissTransition(__instance);
+            __result = Task.CompletedTask;
+            return false;
+        }
+        return true;
     }
 }

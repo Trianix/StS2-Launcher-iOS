@@ -104,5 +104,7 @@ internal static partial class PlatformPatches
         ApplyModelIdSerializationCacheInitPatch(harmony);
         ApplyGameStartupPatch(harmony);
         ApplyLaunchMainMenuPatch(harmony);
+        ApplyMainMenuReadyPatch(harmony);
+        ApplyTransitionPatch(harmony);
     }
 }

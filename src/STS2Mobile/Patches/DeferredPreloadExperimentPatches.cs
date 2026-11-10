@@ -11,6 +11,7 @@ namespace STS2Mobile.Patches;
 // Stage 3 diagnostic only. Both experiment arms use the same APK. Android
 // snapshots the ADB-controlled setting in Activity.onCreate, so the selected
 // arm cannot change during a process. With no setting, behavior is unchanged.
+// On iOS, startup deferred preload burst (686 assets) is always suppressed to keep the main thread and audio responsive.
 internal static class DeferredPreloadExperimentPatches
 {
     private static bool _suppressFirstCall;
@@ -19,7 +20,7 @@ internal static class DeferredPreloadExperimentPatches
 
     internal static void Apply(Harmony harmony)
     {
-        if (!OperatingSystem.IsAndroid())
+        if (!MobilePlatform.IsMobile)
             return;
 
         _suppressFirstCall = ReadSuppressionArm();
@@ -60,18 +61,26 @@ internal static class DeferredPreloadExperimentPatches
 
     private static bool ReadSuppressionArm()
     {
-        try
+        if (OperatingSystem.IsIOS())
+            return true;
+
+        if (OperatingSystem.IsAndroid())
         {
-            return AndroidGodotAppBridge.IsDeferredPreloadExperimentEnabled();
+            try
+            {
+                return AndroidGodotAppBridge.IsDeferredPreloadExperimentEnabled();
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log(
+                    "[DeferredPreloadExperiment] setting bridge read failed; using normal loading: "
+                    + ex.Message
+                );
+                return false;
+            }
         }
-        catch (Exception ex)
-        {
-            PatchHelper.Log(
-                "[DeferredPreloadExperiment] setting bridge read failed; using normal loading: "
-                + ex.Message
-            );
-            return false;
-        }
+
+        return false;
     }
 
     private static void ExecuteDeferredPostfix()

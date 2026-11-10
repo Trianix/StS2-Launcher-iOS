@@ -31,9 +31,15 @@ internal static partial class LauncherGameStartupRecovery
                 var scene = LauncherGameSceneReadiness.GetCurrentReadyScene(game, attemptId);
                 if (scene != null)
                 {
+                    PatchHelper.Log($"[StartupRecovery] Ready scene confirmed: {scene.GetType().Name}. Waiting for visible post-draw frame...");
                     operation.SetStage(LauncherStartupStage.WaitingForVisibleFrame);
                     await stage.PostDrawAsync();
-                    if (LauncherGameSceneReadiness.TryConfirmRendered(game, attemptId, scene)) break;
+                    if (LauncherGameSceneReadiness.TryConfirmRendered(game, attemptId, scene))
+                    {
+                        PatchHelper.Log($"[StartupRecovery] Main menu scene confirmed rendered for attemptId={attemptId}. Proceeding to visibility check.");
+                        break;
+                    }
+                    PatchHelper.Log($"[StartupRecovery] TryConfirmRendered returned false for attemptId={attemptId}, retrying next frame...");
                 }
                 await stage.ProcessFrameAsync();
             }

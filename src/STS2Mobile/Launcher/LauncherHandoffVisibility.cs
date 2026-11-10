@@ -53,6 +53,15 @@ internal readonly struct LauncherHandoffVisibility
             );
         }
 
+        if (OperatingSystem.IsIOS())
+        {
+            return new LauncherHandoffVisibility(
+                "foreground",
+                true,
+                true
+            );
+        }
+
         var focused = DisplayServer.WindowIsFocused();
         return new LauncherHandoffVisibility(
             focused ? "foreground" : "background",

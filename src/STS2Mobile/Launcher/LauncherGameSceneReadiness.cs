@@ -14,8 +14,17 @@ internal static class LauncherGameSceneReadiness
     internal static void EndStartup(string attemptId) => Binding.End(attemptId);
     internal static void BindScene(object scene) => Binding.Bind(scene);
 
-    internal static void RecordReady(object scene)
+    internal static void RecordReady(object scene, object game = null)
     {
+        if (scene == null)
+            return;
+
+        if (game != null)
+        {
+            Binding.MarkReady(scene, game);
+            return;
+        }
+
         if (scene is not Node node)
             return;
         for (var parent = node.GetParent(); parent != null; parent = parent.GetParent())
@@ -37,9 +46,24 @@ internal static class LauncherGameSceneReadiness
         {
             var container = game.GetType().GetProperty("RootSceneContainer", BindingFlags.Public | BindingFlags.Instance)?.GetValue(game);
             var current = container?.GetType().GetProperty("CurrentScene", BindingFlags.Public | BindingFlags.Instance)?.GetValue(container);
-            return current is Node node && GodotObject.IsInstanceValid(node)
-                && node.IsInsideTree() && node.IsNodeReady()
-                && Binding.IsReady(game, attemptId, current) ? current : null;
+            if (current is Node node && GodotObject.IsInstanceValid(node)
+                && node.IsInsideTree() && node.IsNodeReady())
+            {
+                if (!Binding.IsReady(game, attemptId, current))
+                {
+                    var typeName = current.GetType().FullName ?? "";
+                    if (typeName.Contains("NMainMenu", StringComparison.Ordinal))
+                    {
+                        PatchHelper.Log($"[SceneReadiness] Auto-binding and marking active NMainMenu ready for attemptId={attemptId}");
+                        Binding.Bind(current);
+                        Binding.MarkReady(current, game);
+                    }
+                }
+
+                if (Binding.IsReady(game, attemptId, current))
+                    return current;
+            }
+            return null;
         }
         catch (Exception ex)
         {

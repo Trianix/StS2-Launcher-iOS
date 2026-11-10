@@ -14,6 +14,7 @@ using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
+using STS2Mobile.Launcher;
 
 namespace STS2Mobile.Patches;
 
@@ -1163,6 +1164,18 @@ internal static partial class PlatformPatches
             {
                 game.AddChild(mainMenu);
             }
+        }
+
+        // Register scene with launcher readiness tracking
+        try
+        {
+            PatchHelper.Log("[LaunchMainMenu] Explicitly binding and marking NMainMenu ready for launcher handoff...");
+            LauncherGameSceneReadiness.BindScene(mainMenu);
+            LauncherGameSceneReadiness.RecordReady(mainMenu, game);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Readiness registration warning: {ex.Message}");
         }
 
         // 7. Post-transition resource stats and deferred background asset loading

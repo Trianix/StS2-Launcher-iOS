@@ -2,7 +2,7 @@
 **Date:** November 10, 2026 (Updated: 3:00 PM AEST)  
 **Repository:** `https://github.com/Trianix/StS2-Launcher-iOS.git`  
 **Active Branch:** `feature/ios-port`  
-**Latest Commit:** [`2b18fe0`](https://github.com/Trianix/StS2-Launcher-iOS/commit/2b18fe04edbc6c88b2d0d4fc936258388cdecfc4) (`fix(ios): resolve ModelDb dependency order crash and improve crash diagnostics`)  
+**Latest Commit:** [`443a830`](https://github.com/Trianix/StS2-Launcher-iOS/commit/443a8300ad8a49c4cf1b9cb86d061452bc5ca4a1) (Code fix commit: [`2b18fe0`](https://github.com/Trianix/StS2-Launcher-iOS/commit/2b18fe04edbc6c88b2d0d4fc936258388cdecfc4))  
 **Latest CI Build:** [Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764) — **Success**  
 **Build Artifact:** `STS2Launcher-iOS` (`STS2Launcher-0.2.436.ipa`)  
 

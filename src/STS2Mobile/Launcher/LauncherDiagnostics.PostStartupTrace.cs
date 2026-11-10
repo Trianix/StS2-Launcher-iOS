@@ -12,7 +12,7 @@ internal static partial class LauncherDiagnostics
         params string[] details
     )
     {
-        var trace = PostStartupTrace(OS.GetDataDir());
+        var trace = PostStartupTrace(DiagnosticDataDir);
         try
         {
             trace.WriteAllText(BuildPostStartupTrace(root, phase, details));

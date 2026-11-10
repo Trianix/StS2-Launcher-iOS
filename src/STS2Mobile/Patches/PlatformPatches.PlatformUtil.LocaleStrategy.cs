@@ -406,4 +406,33 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"ModelIdSerializationCache.Init patch failed: {ex.Message}");
         }
     }
+
+    private static void ApplyGameStartupPatch(Harmony harmony)
+    {
+        try
+        {
+            var method = typeof(NGame).GetMethod(
+                "GameStartup",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("NGame.GameStartup patch: GameStartup method not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(GameStartupPrefix)))
+            );
+            PatchHelper.Log("Patched NGame.GameStartup (resilient null-guarded startup flow)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"NGame.GameStartup patch failed: {ex.Message}");
+        }
+    }
 }

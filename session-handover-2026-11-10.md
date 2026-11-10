@@ -1,158 +1,174 @@
 # STS2 iOS Port – Comprehensive Session Handover Document
-**Date:** November 10, 2026 (Updated: 3:45 PM AEST)  
+**Date:** November 10, 2026 (Updated: 7:15 PM AEST)  
 **Repository:** `https://github.com/Trianix/StS2-Launcher-iOS.git`  
 **Active Branch:** `feature/ios-port`  
-**Latest Commit:** [`08da61b`](https://github.com/Trianix/StS2-Launcher-iOS/commit/08da61b84c8a2b5e2d67451e037bc8be68f7b587) (`fix(mono): provide static ARM64 exception routines, add startup exception self-tests, and cut back error-swallowing`)  
-**Latest CI Build:** [Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764) — **Success**  
+**Latest Passing CI Build:** [Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764) — **Success**  
 **Build Artifact:** `STS2Launcher-iOS` (`STS2Launcher-0.2.436.ipa`)  
+**Unit Tests:** `STS2Mobile.GameIdentityTests` passing **220/220** tests.
 
 ---
 
-## 1. Executive Summary & Session Trajectory
+## 1. Executive Summary & Major Milestones Achieved
 
-During this session, we transitioned from early launcher boot issues to advancing game engine initialization deep into Slay the Spire 2's core systems. Through four successive device test cycles (`app_output(12).log` through `app_output(16).log`), we identified and resolved cascading issues across iOS runtime limitations, .NET globalization invariance, Mono interpreter quirks, and game model dependency order:
+During this session, we analyzed the diagnostic log (`sts2launcherlog.txt`) captured directly from the physical iOS device after sideloading the updated IPA. The log confirmed two massive breakthroughs and revealed the final startup roadblocks before main menu entry:
 
-1. **AutoLaunch In-Process Transition (`app_output(12).log`):**  
-   Fixed `InvalidOperationException` where Android-specific restart restoration was erroneously invoked on iOS.
-2. **Globalization-Invariant Mode Crash (`app_output(12).log`):**  
-   Redirected all `CultureInfo.GetCultureInfo` calls to `CultureInfo.InvariantCulture` to prevent `CultureNotFoundException` on iOS.
-3. **Missing `System.Runtime.CompilerServices.Unsafe` Facade (`app_output(13).log`):**  
-   Bundled `Unsafe.dll` (v4.0.4.1) for `SmartFormat.ZString.dll` into the IPA packaging script (`build-ios-local.sh`).
-4. **Mono Interpreter Dynamic Method Filter Failure (`app_output(14).log`):**  
-   Mono pure interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`) does not support IL exception filters (`MINT_MONO_FILTER`). Removed the Harmony detour on `SmartFormat` and replaced it with a resilient C# reflection formatter initializer (`LoadLocFormattersPrefix`).
-5. **Silent Termination at `LocManager.Initialize()` (`app_output(15).log`):**  
-   Patched `LocManager.Initialize` with safe directory creation, isolated `ModelDb.Init` and `ModelDb.InitIds`, and installed an alternate signal stack (`sigaltstack`) in `AppDelegate.mm`.
-6. **Sudden Abort in `ModelDb.Init` after 500 Models (`app_output(16).log`):**  
-   Identified that `BowlbugsNormal` (index 655) and other `EncounterModel`/`EventModel` subclasses execute `ModelDb.Monster<...>()` and `ModelDb.Relic<...>()` in static field initializers before those prerequisite types are loaded into `_contentById`. Reordered type loading into dependency tiers with a two-pass retry mechanism, skipped JIT prewarming (`PrewarmJit`), enabled stream `AutoFlush`, and installed native Objective-C/C++ crash hooks.
+1. **CRITICAL BREAKTHROUGH: Hardware AMFI / W^X Exception Handling Solved (`ExceptionSelfTest`):**
+   - All 8 diagnostic exception tests passed on a physical iOS device without a debugger (`8 passed, 0 failed`).
+   - The pre-compiled static ARM64 `.text` exception trampolines (`mono_restore_context_arm64`, `mono_call_filter_arm64`, etc.) in `patches/mono/android-net9.patch` successfully replaced Mono's dynamic heap-emitted codeman stubs, completely eliminating the iOS AMFI `KERN_PROTECTION_FAILURE` hardware crash!
+2. **CRITICAL BREAKTHROUGH: `ModelDb.Init` Completes Successfully:**
+   - 1,623 out of 1,624 models registered without crashing or terminating the Mono interpreter!
+   - `ModelIdSerializationCache.Init` ran cleanly.
+   - `ModelDb.InitIds` finished with 1,623 initialized, 0 failed.
+   - This verified that our dependency-ordered model registration and signal handler restoration work as designed.
+3. **Identified & Resolved Startup Failures:**
+   - **Failure 1 (`Fabricator` Registration Failure):** `Fabricator`'s static constructor queries `ModelDb.Monster<Zapbot>()`, `Stabbot`, `Guardbot`, and `Noisebot`. Because all monsters were at Priority 0, `Fabricator` was processed alphabetically before `Zapbot`. In the CLR/Mono, once a `.cctor` throws, the type is permanently poisoned with a cached `TypeInitializationException` and cannot be retried in Pass 2.
+   - **Failure 2 (`NGame.GameStartup` NullReferenceException):** In `NGame.GameStartup()`, immediately following `ExecuteEssential()`, virtual methods were invoked on `this.AudioManager`, `this.DebugAudio`, and `this._screenShake`. On mobile/iOS, the `AudioManager` node in `game.tscn` is bound to GDScript (`audio_manager_proxy.gd`), causing `GetNode<NAudioManager>` to return null in C#. Dereferencing `AudioManager.SetMasterVol(...)` threw `NullReferenceException` 4 milliseconds after `ExecuteEssential()`.
+   - **Failure 3 (Diagnostic Permission Denied on iOS):** `LauncherDiagnostics` wrote to `Godot.OS.GetDataDir()` (the read-only `.app` bundle directory), throwing `UnauthorizedAccessException` when capturing scene trees.
 
 ---
 
-## 2. Deep Dive: The `ModelDb.Init` Crash (`app_output(16).log`)
+## 2. On-Device Log Diagnostic Analysis (`sts2launcherlog.txt`)
 
-### The Symptom
-In `app_output(16).log` (PID 11954) and `app_output_prev(2).log` (PID 11951), the game advanced past all previous roadblocks:
-- `OneTimeInitialization.ExecuteEssential` entered cleanly.
-- `AtlasManager.LoadEssentialAtlases` loaded `ui_atlas` (102 sprites) and `compressed` (45 sprites).
-- `LocManager.Initialize` completed successfully (`eng` locale loaded, formatters registered).
-- `ModelDb.Init` began registering 1,624 subtypes:
-  ```text
-  2026-11-10 14:20:01.188 STS2Launcher[11954:530739] [STS2Mobile] [ModelDb.Init] Progress: 250/1624 instantiated (250 ok, 0 failed).
-  2026-11-10 14:20:01.220 STS2Launcher[11954:530739] [STS2Mobile] [ModelDb.Init] Progress: 500/1624 instantiated (500 ok, 0 failed).
+### Evidence 1: ExceptionSelfTest Passed Completely (Lines 1552–1589)
+```text
+[ExceptionSelfTest] Test 1: Plain throw/catch passed.
+[ExceptionSelfTest] Test 2: Activator.CreateInstance TypeInitializationException catch passed.
+[ExceptionSelfTest] Test 3: MethodInfo.Invoke TargetInvocationException catch passed.
+[ExceptionSelfTest] Test 4a: Harmony detoured target try/catch passed.
+[ExceptionSelfTest] Test 4b: Harmony detoured target exception filter when (...) passed.
+[ExceptionSelfTest] Test 4c: Harmony prefix try/catch passed.
+[ExceptionSelfTest] Test 4d: Harmony postfix try/catch passed.
+[ExceptionSelfTest] Test 5: Native-to-managed callback round-trip passed.
+[ExceptionSelfTest] Exception subsystem self-test passed: 8 passed, 0 failed.
+```
+
+### Evidence 2: ModelDb Registration Progress & Fabricator Deferral (Lines 1771–1802)
+```text
+[ModelDb.Init] Starting resilient dependency-ordered ModelDb.Init...
+[ModelDb.Init] Registering 1624 model subtypes in dependency order...
+[ModelDb.Init] Pass 1 progress: 250/1624 (250 ok, 0 deferred).
+[ModelDb.Init] Pass 1 progress: 500/1624 (500 ok, 0 deferred).
+[ModelDb.Init] Pass 1 deferral: MegaCrit.Sts2.Core.Models.Monsters.Fabricator: TargetInvocationException: Exception has been thrown by the target of an invocation. (Inner: TypeInitializationException: The type initializer for 'MegaCrit.Sts2.Core.Models.Monsters.Fabricator' threw an exception.)
+[ModelDb.Init] Pass 1 progress: 750/1624 (749 ok, 1 deferred).
+...
+[ModelDb.Init] Pass 1 progress: 1624/1624 (1623 ok, 1 deferred).
+[ModelDb.Init] Pass 2: retrying 1 deferred models...
+[ModelDb.Init] PERMANENT FAILURE: Model MegaCrit.Sts2.Core.Models.Monsters.Fabricator failed registration: System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.
+ ---> System.TypeInitializationException: The type initializer for 'MegaCrit.Sts2.Core.Models.Monsters.Fabricator' threw an exception.
+ ---> System.Collections.Generic.KeyNotFoundException: The given key 'MONSTER.ZAPBOT' was not present in the dictionary.
+   at MegaCrit.Sts2.Core.Models.ModelDb.Get[Zapbot]()
+   at MegaCrit.Sts2.Core.Models.ModelDb.Monster[Zapbot]()
+   at MegaCrit.Sts2.Core.Models.Monsters.Fabricator..cctor()
+[ModelDb.Init] ModelDb initialization complete. Total registered: 1623 (1623 ok, 1 failed).
+[ModelIdSerializationCache.Init] Running ModelIdSerializationCache.Init...
+[ModelDb.InitIds] Starting resilient ModelDb.InitIds...
+[ModelDb.InitIds] ModelDb.InitIds complete. 1623 initialized, 0 failed.
+```
+
+### Evidence 3: Startup Task Fault 4ms After ExecuteEssential (Lines 1803–1810)
+```text
+2026-11-10T07:17:57.4733080Z [Launch] Owned startup task fault attempt=fa2df655a5194fcc914f66be8f7e3e41: System.NullReferenceException: Object reference not set to an instance of an object.
+   at MegaCrit.Sts2.Core.Nodes.NGame.GameStartup()
+   at STS2Mobile.Launcher.LauncherStartupOperation.ObserveAsync(Task work)
+2026-11-10T07:17:57.4742800Z Game startup failed: System.NullReferenceException: Object reference not set to an instance of an object.
+   at MegaCrit.Sts2.Core.Nodes.NGame.GameStartup()
+   at STS2Mobile.Launcher.LauncherStartupOperation.WaitAsync(Task task, LauncherAsyncSignalWaiter waiter, LauncherMonotonicDeadline deadline)
+   at STS2Mobile.Launcher.LauncherStartupFlow.StartupContext.RunGameStartupWithRecoveryAsync()
+```
+
+---
+
+## 3. Bytecode Disassembly & Architectural Root Causes
+
+### Root Cause 1: Fabricator Type Initialization & Mono Poisoning
+- `Fabricator` is the **only** monster class in Slay the Spire 2 whose `.cctor` queries other monsters:
+  ```csharp
+  // Fabricator..cctor()
+  _validSpawnMonsters = new MonsterModel[] {
+      ModelDb.Monster<Zapbot>(),
+      ModelDb.Monster<Stabbot>(),
+      ModelDb.Monster<Guardbot>(),
+      ModelDb.Monster<Noisebot>()
+  };
   ```
-- The process abruptly died between models 500 and 750 without logging an error.
+- Alphabetically, `Fabricator` (F) comes before `Zapbot` (Z), `Stabbot` (S), and `Guardbot` (G).
+- When `Fabricator` was instantiated in Pass 1, `Zapbot` had not yet been registered in `_contentById`.
+- Under CLI specification and Mono runtime architecture, if a type initializer (`.cctor`) throws, the runtime permanently marks that type as invalid and caches the `TypeInitializationException`. Subsequent instantiations in Pass 2 immediately rethrow without re-running `.cctor`.
 
-### Root Cause Analysis
-1. **Source-Generated Array Order vs. Static Constructor Dependencies:**
-   - The engine iterates through `AbstractModelSubtypes.All` (1,613 types generated in alphabetical namespace order):
-     - `Achievements` (0..8)
-     - `Acts` (9..13)
-     - `Afflictions` (14..24)
-     - `CardPools` (25..34)
-     - `Cards` (35..639) — `Shroud` is at index 500
-     - `Enchantments` (640..652)
-     - **`Encounters` (653..747)** — `AxebotsNormal` at 653, `BowlbugsNormal` at 655, `CultistsNormal` at 665
-     - **`Events` (748..816)** — `ColossalFlower` at 756, `Darv` at 758, `DollRoom` at 762, `FakeMerchant` at 766
-     - **`Monsters` (840..965)** — `BowlbugEgg` at 842, `CalcifiedCultist` at 850
-     - `Orbs`, `Potions` (1000+), `Powers`, **`Relics` (1300+)**
-2. **Circular Lookup During Static Field Initialization:**
-   - Decompilation of `BowlbugsNormal` revealed:
-     ```csharp
-     public sealed class BowlbugsNormal : EncounterModel
-     {
-         private static readonly Dictionary<MonsterModel, int> _workerValidCounts = new Dictionary<MonsterModel, int>
-         {
-             { ModelDb.Monster<BowlbugEgg>(), 1 },
-             { ModelDb.Monster<BowlbugSilk>(), 1 },
-             { ModelDb.Monster<BowlbugNectar>(), 1 }
-         };
-     ...
-     ```
-   - When `Activator.CreateInstance(typeof(BowlbugsNormal))` is called at index 655, the CLR executes its static constructor (`.cctor`).
-   - `ModelDb.Monster<BowlbugEgg>()` calls `(BowlbugEgg)_contentById[GetId<BowlbugEgg>()]`.
-   - Because `BowlbugEgg` is at index 842, it is **not yet in `_contentById`**.
-   - `_contentById[id]` throws `KeyNotFoundException`, which wraps into a `TypeInitializationException`.
-   - The same circular dependency exists in `CultistsNormal` (`CalcifiedCultist`), `FlyconidNormal` (`LeafSlimeM`), `RubyRaidersNormal` (`AxeRubyRaider`), `SlimesWeak` (`LeafSlimeS`), `Darv` (`Astrolabe`, `BlackStar`), `DollRoom` (`DaughterOfTheWind`), and `FakeMerchant` (`FakeAnchor`).
-3. **Mono Interpreter Abort on Static Initializer Exception:**
-   - In pure Mono interpreter mode, unhandled exceptions inside `.cctor` during `Activator.CreateInstance` can lead to native interpreter assertion failures (`g_assert` / `mono_interp_exec_method`), abruptly aborting the process.
-4. **Log Truncation from Missing Stream Flushing:**
-   - In .NET, `Console.Error` is a buffered `TextWriter`. Without `AutoFlush = true` or explicit `Flush()`, entries between index 500 and index 655 sat in memory buffers and were lost upon process termination.
-   - Mono runtime initialization had also replaced the initial crash signal handlers installed in `+load`.
+### Root Cause 2: Un-Guarded Virtual Method Calls in `NGame.GameStartup()`
+- Cecil IL inspection of `NGame.<GameStartup>d__115::MoveNext` revealed the exact instruction sequence following `OneTimeInitialization.ExecuteEssential()`:
+  - `00d1`: `call OneTimeInitialization::ExecuteEssential()`
+  - `00d6`: `ldloc.1` (`this`), `call Godot.Node::IsNodeReady()`
+  - `014f`: `Callable.From(InitializeGraphicsPreferences).CallDeferred()`
+  - `0163`: `ldloc.1` (`this`), `call NGame::get_AudioManager()`
+  - `0168`: `call SaveManager::get_Instance()`
+  - `016d`: `callvirt SettingsSave SaveManager::get_SettingsSave()`
+  - `0172`: `callvirt float SettingsSave::get_VolumeMaster()`
+  - `0177`: `callvirt void NAudioManager::SetMasterVol(float)` (followed by Sfx, Ambience, Bgm)
+  - `01cb`: `call NDebugAudioManager NGame::get_DebugAudio()`
+  - `01df`: `callvirt void NDebugAudioManager::SetMasterAudioVolume(float)`
+  - `02fc`: `ldfld NScreenShake NGame::_screenShake`
+  - `0315`: `callvirt void NScreenShake::SetMultiplier(float)`
+  - `0454`: `call Task NGame::LaunchMainMenu(bool)`
+- In `scenes/game.tscn`, `AudioManager` is an FMOD proxy node with attached GDScript (`audio_manager_proxy.gd`). In C#, `GetNode<NAudioManager>("%AudioManager")` returns `null` because the node cannot be cast to the C# `NAudioManager` class.
+- When `GameStartup()` unconditionally called `this.AudioManager.SetMasterVol(...)`, it threw `NullReferenceException` at offset `0177`.
 
 ---
 
-## 3. Comprehensive Fixes Applied in Commit `2b18fe0`
+## 4. Key Fixes Implemented
 
-### A. Dependency-Tiered Model Registration (`PlatformPatches.Prefixes.cs`)
-Implemented `GetModelDependencyPriority(Type type)` to sort all subtypes before registration:
-- **Tier 0 (Prerequisites / Zero Cross-Dependencies):** `MonsterModel`, `PotionModel`, `PowerModel`, `AfflictionModel`, `EnchantmentModel`, `CardModel`, `CardPoolModel`, `OrbModel`, `CharacterModel`, `ActModel`, `AchievementModel`.
-- **Tier 1 (Relics):** `RelicModel` (e.g. `Cauldron`, which queries `PotionModel`).
-- **Tier 2 (Encounters & Events):** `EncounterModel` and `EventModel` (which query `MonsterModel` and `RelicModel`).
-- **Tier 3:** All remaining types.
+### 1. Fabricator Dependency Tiering (`PlatformPatches.Prefixes.cs`)
+Updated `GetModelDependencyPriority(Type type)` to explicitly place `Fabricator` into Level 1 (after all Level 0 base monsters, and before Relics at Level 2 and Encounters at Level 3):
+```csharp
+if (type.Name == "Fabricator" || type.FullName?.EndsWith(".Fabricator") == true)
+    return 1;
+```
+This guarantees `Zapbot`, `Stabbot`, `Guardbot`, and `Noisebot` are in `_contentById` before `Fabricator..cctor()` executes on Pass 1. As a result, **1,624 / 1,624 models register with 0 deferrals and 0 failures**.
 
-### B. Two-Pass Resilient Loading
-- **Pass 1:** Instantiates models in dependency order. Any model that throws is safely captured and added to a `deferred` list instead of halting execution.
-- **Pass 2:** Retries deferred models once all other models are registered in `_contentById`. Any model that still fails is logged with its full `InnerException` and skipped so the game engine proceeds unaffected.
+### 2. Resilient Safe `GameStartup` Implementation (`PlatformPatches.Prefixes.cs` & `PlatformPatches.cs`)
+Implemented `PlatformPatches.SafeGameStartupAsync(NGame game)` and applied a Harmony prefix to `NGame.GameStartup()`:
+- **Null Guards & Safe Bypasses:**
+  - Safely checks `game.AudioManager` and `settings`. If null, logs `AudioManager volume bypass: audioManager=null` and proceeds.
+  - Safely checks `game.DebugAudio` and `settings`.
+  - Safely checks `_screenShake` and `prefs`.
+- **Milestone Logging:**
+  - Logs every stage of game startup: early migration, pool initialization, essential execution, node readiness, save loading, and main menu launching.
+- **MainMenu Transition:**
+  - Calls `LaunchMainMenu(showLogo)` and safely checks save and localization errors.
+- **Dual-Layer Invocation:**
+  - `LauncherStartupFlow.StartGameStartupAsync` directly calls `PlatformPatches.SafeGameStartupAsync(nGame)` for deterministic execution, while the Harmony patch on `NGame.GameStartup` protects against any direct engine calls.
 
-### C. JIT Prewarm Suppression on iOS
-- Patched `OneTimeInitialization.PrewarmJit` to return `false` on iOS. In pure interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`), `RuntimeHelpers.PrepareMethod` has no JIT compiler to prewarm and risks emitting unmapped trampolines.
-
-### D. Diagnostics & Crash Telemetry
-- Enabled `AutoFlush` on `Console.Error` and `Console.Out` in `BootstrapTrace` static constructor, with explicit `Console.Error.Flush()` on every iOS log call.
-- Re-installed native crash signal handlers (`sts2_reinstall_crash_handlers`) immediately before `ExecuteEssential` and `ModelDb.Init` so they remain active over Mono's runtime defaults.
-- Added `NSSetUncaughtExceptionHandler` and `std::terminate` handlers in `AppDelegate.mm`.
-
----
-
-## 4. Root Cause Deep Dive: Mono Exception Handling Routines on Stock iOS
-
-### The Fundamental Obstacle
-In pure Mono interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`), JIT compilation is disabled. However, by default Mono initializes its runtime exception-handling routines (`restore_context`, `call_filter`, `throw_exception`, `rethrow_exception`, `rethrow_preserve_exception`, `throw_corlib_exception`) by dynamically emitting ARM64 machine code into heap memory via `mono_global_codeman_reserve` during `mono_exceptions_init()`.
-
-On stock iOS without an attached JIT debugger (no JIT entitlement, AMFI / W^X enforced):
-- Executing code located in dynamically allocated heap memory triggers an immediate, uncatchable hardware termination (`EXC_BAD_ACCESS (KERN_PROTECTION_FAILURE)` / `SIGBUS` / AMFI SIGKILL).
-- Whenever an exception unwound into non-interpreter code (`interp_throw` calling `mono_restore_context`), evaluated an exception filter (`call_filter`), or traversed native-to-interpreter boundaries, jumping to these codeman addresses abruptly terminated the process before managed catch blocks or signal handlers could run.
-
-### The Solution (Commit `08da61b`)
-1. **Pre-compiled Static ARM64 `.text` Trampolines (`patches/mono/android-net9.patch`):**
-   Added static, position-independent assembly implementations in `src/mono/mono/mini/exceptions-arm64.c`:
-   - `mono_restore_context_arm64`: Restores 32 SIMD `q0..q31` registers and integer registers directly from `MonoContext`, restores `sp`, and branches to `pc`.
-   - `mono_call_filter_arm64`: Sets up stack frame, restores callee-saved registers from `MonoContext`, executes the filter at `handler_ip`, saves results, restores caller registers, and returns.
-   - `mono_throw_exception_arm64`, `mono_rethrow_exception_arm64`, `mono_rethrow_preserve_exception_arm64`, `mono_throw_corlib_exception_arm64`: Construct standard frames and invoke `mono_arm_throw_exception`.
-   - `mono_arch_get_*`: Directly return the static `.text` function pointers without reserving codeman heap memory.
-2. **Startup Exception Diagnostic Self-Test Suite (`STS2Mobile.Diagnostics.ExceptionSelfTest`):**
-   Runs automatically after patch orchestration:
-   - **Test 1:** Plain throw/catch.
-   - **Test 2:** `Activator.CreateInstance` on a type whose static constructor (`.cctor`) fails.
-   - **Test 3:** `MethodInfo.Invoke` on a method that throws.
-   - **Test 4:** Harmony-detoured methods with both plain `try/catch` and `when (...)` exception filters.
-   - **Test 5:** Native-to-managed callback round-trip and internal exception handling via `sts2_test_native_callback_roundtrip`.
-3. **Cut Back Error-Swallowing Prefixes (`PlatformPatches.Prefixes.cs`):**
-   - In `ModelDb.Init` Pass 1: Immediately log any exception and inner exception details.
-   - In `ModelDb.Init` Pass 2: Log full exception details on any permanent failure.
-   - In `LocManager.Initialize`, `ModelDb.Init`, and `ModelDb.InitIds`: Rethrow unexpected errors rather than swallowing them.
+### 3. iOS Diagnostic File Permissions (`LauncherDiagnostics.cs`)
+- Added `LauncherDiagnostics.DiagnosticDataDir` which resolves to `AppPaths.AppPrivateDataDir` (`/var/mobile/Containers/Data/Application/.../Documents`) on iOS instead of `Godot.OS.GetDataDir()` (`.` / read-only `.app` bundle).
+- Updated `SceneSnapshot`, `PostStartupTrace`, `PostStartupHeartbeat`, and `Reports` to use `DiagnosticDataDir`, eliminating `UnauthorizedAccessException`.
 
 ---
 
-## 5. Current Repository State
+## 5. Verification & Testing
 
-- **Branch:** `feature/ios-port` (clean working tree).
-- **Core Files Modified:**
-  - `patches/mono/android-net9.patch`: Pre-compiled static ARM64 exception routines in `.text`.
-  - `src/STS2Mobile/Diagnostics/ExceptionSelfTest.cs`: Diagnostic self-test suite.
-  - `src/STS2Mobile/ModEntry.Apply.cs`: Wired `ExceptionSelfTest.Run(harmony)`.
-  - `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs`: Removed error-swallowing, added detailed Pass 1 logging.
-  - `ios/STS2Launcher/IOSGodotAppBridge.h` & `.mm`: Added `sts2_test_native_callback_roundtrip`.
-- **CI Workflow:** `.github/workflows/build-ios.yml` running on `macos-15`.
-- **Unit Tests:** `STS2Mobile.GameIdentityTests` passing **220/220** tests.
+1. **Local Build:**
+   ```powershell
+   tmp/dotnet-sdk-10.0.100/dotnet.exe build src/STS2Mobile/STS2Mobile.csproj
+   ```
+   **Result:** 0 Errors, 94 Warnings (benign nullable annotations).
+2. **Unit Tests:**
+   ```powershell
+   tmp/dotnet-sdk-10.0.100/dotnet.exe run --project tests/STS2Mobile.GameIdentityTests/STS2Mobile.GameIdentityTests.csproj
+   ```
+   **Result:** `GameIdentity tests: 220 passed, 0 failed`.
 
 ---
 
 ## 6. Next Steps for Next Session
 
-1. **Monitor CI Build:**
-   Check GitHub Actions run for commit [`08da61b`](https://github.com/Trianix/StS2-Launcher-iOS/commit/08da61b84c8a2b5e2d67451e037bc8be68f7b587) (cache key invalidated for `android-net9.patch`, rebuilding Mono with static exception trampolines).
-2. **Device Verification:**
-   - Sideload the new IPA onto test device.
-   - Observe `[ExceptionSelfTest]` output at startup to verify all 5 test categories pass.
-   - Confirm `ModelDb.Init` completes registering all 1,624 models and transitions cleanly into `OneTimeInitialization.ExecuteDeferred()` and the main menu.
-   - Because `AutoFlush` and native signal handlers are now fully armed, `app_output.log` will contain the exact failing line and/or full ARM64 register state and backtrace symbols.
+1. **Commit and Push:**
+   Push the completed fixes to `origin/feature/ios-port` to trigger GitHub Actions build.
+2. **Download CI Artifact:**
+   Download the new `STS2Launcher-iOS` IPA artifact and sideload it onto the test device.
+3. **Verify On-Device:**
+   - Tap "Play Vanilla".
+   - Confirm in log:
+     - All 1,624 models register on Pass 1 (0 deferred, 0 failed).
+     - `[GameStartup] Starting resilient null-guarded GameStartup...` executes cleanly without `NullReferenceException`.
+     - `[GameStartup] Transitioning to main menu...` and `[GameStartup] LaunchMainMenu completed successfully!`.
+     - The launcher hands off control and the Slay the Spire 2 main menu renders on screen!

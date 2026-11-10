@@ -15,7 +15,7 @@ internal sealed partial class LauncherStartupRecoveryControlPanel
         private string DataDir { get; }
 
         private static StartupRecoveryDiagnosticsReport Current()
-            => new(OS.GetDataDir());
+            => new(LauncherDiagnostics.DiagnosticDataDir);
 
         private string Export()
         {

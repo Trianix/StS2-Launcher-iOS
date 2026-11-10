@@ -9,7 +9,7 @@ internal static partial class LauncherDiagnostics
         params string[] details
     )
         => WritePostStartupHeartbeatForLaunch(
-            Godot.OS.GetDataDir(), SafePostStartupBranch(), phase, details);
+            DiagnosticDataDir, SafePostStartupBranch(), phase, details);
 
     // Safe for the existing diagnostic timer: every engine/preference value
     // was captured by its caller before leaving the Godot thread.

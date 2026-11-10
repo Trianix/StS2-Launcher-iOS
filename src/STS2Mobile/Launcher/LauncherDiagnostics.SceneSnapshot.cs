@@ -11,7 +11,7 @@ internal static partial class LauncherDiagnostics
 
     internal static void WriteStartupSceneSnapshot(Node root, string reason)
     {
-        var snapshot = StartupSceneSnapshot(OS.GetDataDir());
+        var snapshot = StartupSceneSnapshot(DiagnosticDataDir);
         try
         {
             snapshot.WriteAllText(BuildStartupSceneSnapshot(root, reason));

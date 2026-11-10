@@ -118,7 +118,7 @@ internal static partial class LauncherDiagnostics
 
     internal static void WriteMainMenuPreparation(string classification, params string[] details)
     {
-        var evidence = MainMenuPreparation(Godot.OS.GetDataDir());
+        var evidence = MainMenuPreparation(DiagnosticDataDir);
         try
         {
             evidence.WriteAllText(CreateTimestampedText("StS2 Launcher main-menu preparation", "UTC", sb =>

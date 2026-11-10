@@ -17,6 +17,7 @@ internal static partial class LauncherDiagnostics
     private const string SummaryFileStatusPrefix = "  ";
     private const string Unavailable = "<unavailable>";
     private const string Unknown = "<unknown>";
+    internal static string DiagnosticDataDir => OperatingSystem.IsIOS() ? AppPaths.AppPrivateDataDir : Godot.OS.GetDataDir();
     private static string AndroidAppVersion(string versionName) => $"App version: {versionName ?? Unknown}";
     private static string AndroidBridgeFailed(Exception ex) => $"Bridge diagnostics failed: {ex.Message}";
     private static string ExternalFilesDir(string path) => $"External files dir: {path ?? None}";

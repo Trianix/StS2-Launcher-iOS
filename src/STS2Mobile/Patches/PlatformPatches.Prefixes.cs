@@ -5,6 +5,8 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Godot;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes;
@@ -449,6 +451,11 @@ internal static partial class PlatformPatches
     {
         try
         {
+            // Fabricator is a MonsterModel whose static constructor references other monsters (Zapbot, Stabbot, Guardbot, Noisebot).
+            // It must be initialized in Level 1, AFTER all base monsters in Level 0 are registered.
+            if (type.Name == "Fabricator" || type.FullName?.EndsWith(".Fabricator") == true)
+                return 1;
+
             var categoryType = ModelDb.GetCategoryType(type);
             var name = categoryType?.Name;
             return name switch
@@ -469,17 +476,17 @@ internal static partial class PlatformPatches
                 "CharacterModel" => 0,
                 "ActModel" => 0,
                 "AchievementModel" => 0,
-                // Level 1: Relics (e.g. Cauldron references PotionModel)
-                "RelicModel" => 1,
-                // Level 2: Encounters and Events (e.g. BowlbugsNormal references MonsterModel, Darv references RelicModel)
-                "EncounterModel" => 2,
-                "EventModel" => 2,
-                _ => 3
+                // Level 2: Relics (e.g. Cauldron references PotionModel)
+                "RelicModel" => 2,
+                // Level 3: Encounters and Events (e.g. BowlbugsNormal references MonsterModel, Darv references RelicModel)
+                "EncounterModel" => 3,
+                "EventModel" => 3,
+                _ => 4
             };
         }
         catch
         {
-            return 3;
+            return 4;
         }
     }
 
@@ -674,5 +681,272 @@ internal static partial class PlatformPatches
         }
 
         return false; // Skip original method
+    }
+
+    private static bool GameStartupPrefix(NGame __instance, ref Task __result)
+    {
+        PatchHelper.Log("[GameStartup] Intercepted NGame.GameStartup with resilient startup flow.");
+        __result = SafeGameStartupAsync(__instance);
+        return false;
+    }
+
+    internal static async Task SafeGameStartupAsync(NGame game)
+    {
+        SafeReinstallNativeCrashHandlers();
+        PatchHelper.Log("[GameStartup] Starting resilient null-guarded GameStartup...");
+
+        try
+        {
+            var eveMethod = typeof(OneTimeInitialization).GetMethod("ExecuteVeryEarly", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (eveMethod != null)
+            {
+                var result = eveMethod.Invoke(null, null);
+                if (result is Task eveTask)
+                    await eveTask;
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] OneTimeInitialization.ExecuteVeryEarly: {ex.Message}");
+        }
+
+        try { AccountScopeUserDataMigrator.MigrateToUserScopedDirectories(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] MigrateToUserScopedDirectories: {ex.Message}"); }
+
+        try { AccountScopeUserDataMigrator.ArchiveLegacyData(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] ArchiveLegacyData: {ex.Message}"); }
+
+        try { ProfileAccountScopeMigrator.MigrateToProfileScopedDirectories(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] MigrateToProfileScopedDirectories: {ex.Message}"); }
+
+        try { ProfileAccountScopeMigrator.ArchiveLegacyData(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] ProfileAccountScopeMigrator ArchiveLegacyData: {ex.Message}"); }
+
+        try
+        {
+            var tryCloudSyncMethod = typeof(SaveManager).GetMethod("TryFirstTimeCloudSync", BindingFlags.Public | BindingFlags.Instance);
+            if (tryCloudSyncMethod != null)
+            {
+                var syncTask = tryCloudSyncMethod.Invoke(SaveManager.Instance, null) as Task;
+                if (syncTask != null)
+                    await syncTask;
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] TryFirstTimeCloudSync: {ex.Message}");
+        }
+
+        PatchHelper.Log("[GameStartup] Initializing pools and essential systems...");
+        try
+        {
+            var initPoolsMethod = typeof(NGame).GetMethod("InitPools", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
+            initPoolsMethod?.Invoke(game, null);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] InitPools warning: {ex.Message}");
+        }
+
+        try
+        {
+            OneTimeInitialization.ExecuteEssential();
+            PatchHelper.Log("[GameStartup] ExecuteEssential completed.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] ExecuteEssential error: {ex}");
+            throw;
+        }
+
+        if (!game.IsNodeReady())
+        {
+            PatchHelper.Log("[GameStartup] Waiting for NGame node ready...");
+            await game.ToSignal(game, Node.SignalName.Ready);
+        }
+        PatchHelper.Log("[GameStartup] NGame node is ready.");
+
+        try
+        {
+            var initGfxMethod = typeof(NGame).GetMethod("InitializeGraphicsPreferences", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
+            if (initGfxMethod != null)
+            {
+                var action = (Action)Delegate.CreateDelegate(typeof(Action), game, initGfxMethod);
+                Callable.From(action).CallDeferred();
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] InitializeGraphicsPreferences: {ex.Message}");
+        }
+
+        // Defensive audio manager volume configuration (prevents NullReferenceException when audio manager is null or proxy)
+        try
+        {
+            var settings = SaveManager.Instance?.SettingsSave;
+            var audioManager = game.AudioManager;
+            if (audioManager != null && settings != null)
+            {
+                PatchHelper.Log("[GameStartup] Configuring audio volumes on AudioManager...");
+                audioManager.SetMasterVol(settings.VolumeMaster);
+                audioManager.SetSfxVol(settings.VolumeSfx);
+                audioManager.SetAmbienceVol(settings.VolumeAmbience);
+                audioManager.SetBgmVol(settings.VolumeBgm);
+            }
+            else
+            {
+                PatchHelper.Log($"[GameStartup] AudioManager volume bypass: audioManager={(audioManager != null ? "ok" : "null")}, settings={(settings != null ? "ok" : "null")}");
+            }
+
+            var debugAudio = game.DebugAudio;
+            if (debugAudio != null && settings != null)
+            {
+                debugAudio.SetMasterAudioVolume(settings.VolumeMaster);
+                debugAudio.SetSfxAudioVolume(settings.VolumeSfx);
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] Audio volume setup warning: {ex.Message}");
+        }
+
+        try { MegaCrit.Sts2.Core.Leaderboard.LeaderboardManager.Initialize(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] LeaderboardManager.Initialize: {ex.Message}"); }
+
+        try { MegaCrit.Sts2.Core.Platform.Steam.SteamStatsManager.Initialize(); }
+        catch (Exception ex) { PatchHelper.Log($"[GameStartup] SteamStatsManager.Initialize: {ex.Message}"); }
+
+        object progressReadResult = null;
+        object prefsReadResult = null;
+        try
+        {
+            PatchHelper.Log("[GameStartup] Initializing profile and progress data...");
+            SaveManager.Instance?.InitProfileId(null);
+            progressReadResult = SaveManager.Instance?.InitProgressData();
+            prefsReadResult = SaveManager.Instance?.InitPrefsData();
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] Profile/progress initialization: {ex.Message}");
+        }
+
+        try
+        {
+            var branch = PlatformUtil.GetPlatformBranch();
+            var uniqueId = SaveManager.Instance?.Progress?.UniqueId ?? "mobile";
+            var root = game.GetTree()?.Root;
+            var sentryMethod = typeof(MegaCrit.Sts2.Core.Debug.SentryService).GetMethod(
+                "AfterGameInit",
+                BindingFlags.Public | BindingFlags.Static
+            );
+            if (sentryMethod != null)
+            {
+                var parameters = sentryMethod.GetParameters();
+                if (parameters.Length == 3)
+                    sentryMethod.Invoke(null, new object[] { branch, uniqueId, root });
+                else if (parameters.Length == 2)
+                    sentryMethod.Invoke(null, new object[] { branch, uniqueId });
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] SentryService.AfterGameInit: {ex.Message}");
+        }
+
+        // Defensive screen shake multiplier (prevents NullReferenceException if _screenShake is null)
+        try
+        {
+            var screenShakeField = typeof(NGame).GetField("_screenShake", BindingFlags.NonPublic | BindingFlags.Instance);
+            var screenShake = screenShakeField?.GetValue(game) as MegaCrit.Sts2.Core.Nodes.Vfx.Utilities.NScreenShake;
+            var prefs = SaveManager.Instance?.PrefsSave;
+            if (screenShake != null && prefs != null)
+            {
+                var shakeMult = MegaCrit.Sts2.Core.Nodes.Screens.Settings.NScreenshakePaginator.GetShakeMultiplier(prefs.ScreenShakeOptionIndex);
+                screenShake.SetMultiplier(shakeMult);
+            }
+            else
+            {
+                PatchHelper.Log($"[GameStartup] ScreenShake bypass: screenShake={(screenShake != null ? "ok" : "null")}, prefs={(prefs != null ? "ok" : "null")}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] ScreenShake warning: {ex.Message}");
+        }
+
+        try
+        {
+            var prefs = SaveManager.Instance?.PrefsSave;
+            if (!OS.HasFeature("editor") && prefs != null)
+            {
+                if (prefs.FastMode == MegaCrit.Sts2.Core.Settings.FastModeType.Instant)
+                    prefs.FastMode = MegaCrit.Sts2.Core.Settings.FastModeType.Fast;
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] FastMode warning: {ex.Message}");
+        }
+
+        // Main menu transition
+        if (game.StartOnMainMenu)
+        {
+            PatchHelper.Log("[GameStartup] Transitioning to main menu...");
+            var settings = SaveManager.Instance?.SettingsSave;
+            bool devSkip = MegaCrit.Sts2.Core.Debug.DebugSettings.DevSkip;
+            bool skipLogo = (settings != null && settings.SkipIntroLogo) || CommandLineHelper.HasArg("fastmp");
+            bool showLogo = !(devSkip || skipLogo);
+
+            var launchMainMenuMethod = typeof(NGame).GetMethod("LaunchMainMenu", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
+            if (launchMainMenuMethod != null)
+            {
+                var launchTask = (Task)launchMainMenuMethod.Invoke(game, new object[] { showLogo });
+                if (launchTask != null)
+                {
+                    await launchTask;
+                    PatchHelper.Log("[GameStartup] LaunchMainMenu completed successfully!");
+                }
+            }
+            else
+            {
+                PatchHelper.Log("[GameStartup] ERROR: LaunchMainMenu method not found!");
+            }
+
+            try
+            {
+                var checkSaveErrorMethod = typeof(NGame).GetMethod("CheckShowSaveFileError", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                checkSaveErrorMethod?.Invoke(game, new object[] { progressReadResult, prefsReadResult, OneTimeInitialization.SettingsReadResult });
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[GameStartup] CheckShowSaveFileError: {ex.Message}");
+            }
+
+            try
+            {
+                var checkLocErrorMethod = typeof(NGame).GetMethod("CheckShowLocalizationOverrideErrors", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                checkLocErrorMethod?.Invoke(game, null);
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[GameStartup] CheckShowLocalizationOverrideErrors: {ex.Message}");
+            }
+        }
+
+        try
+        {
+            var onModDetectedMethod = typeof(NGame).GetMethod("OnNewModDetected", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
+            if (onModDetectedMethod != null)
+            {
+                var del = (Action<MegaCrit.Sts2.Core.Modding.Mod>)Delegate.CreateDelegate(typeof(Action<MegaCrit.Sts2.Core.Modding.Mod>), game, onModDetectedMethod);
+                MegaCrit.Sts2.Core.Modding.ModManager.OnModDetected += del;
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[GameStartup] OnNewModDetected subscription: {ex.Message}");
+        }
+
+        PatchHelper.Log("[GameStartup] Resilient GameStartup finished successfully.");
     }
 }

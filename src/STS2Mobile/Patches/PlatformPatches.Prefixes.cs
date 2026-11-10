@@ -6,10 +6,12 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Godot;
+using MegaCrit.Sts2.Core.Assets;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
 
@@ -843,9 +845,9 @@ internal static partial class PlatformPatches
             {
                 var parameters = sentryMethod.GetParameters();
                 if (parameters.Length == 3)
-                    sentryMethod.Invoke(null, new object[] { branch, uniqueId, root });
+                    sentryMethod.Invoke(null, new object[] { branch.ToString(), uniqueId, root });
                 else if (parameters.Length == 2)
-                    sentryMethod.Invoke(null, new object[] { branch, uniqueId });
+                    sentryMethod.Invoke(null, new object[] { branch.ToString(), uniqueId });
             }
         }
         catch (Exception ex)
@@ -891,26 +893,8 @@ internal static partial class PlatformPatches
         // Main menu transition
         if (game.StartOnMainMenu)
         {
-            PatchHelper.Log("[GameStartup] Transitioning to main menu...");
-            var settings = SaveManager.Instance?.SettingsSave;
-            bool devSkip = MegaCrit.Sts2.Core.Debug.DebugSettings.DevSkip;
-            bool skipLogo = (settings != null && settings.SkipIntroLogo) || CommandLineHelper.HasArg("fastmp");
-            bool showLogo = !(devSkip || skipLogo);
-
-            var launchMainMenuMethod = typeof(NGame).GetMethod("LaunchMainMenu", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance);
-            if (launchMainMenuMethod != null)
-            {
-                var launchTask = (Task)launchMainMenuMethod.Invoke(game, new object[] { showLogo });
-                if (launchTask != null)
-                {
-                    await launchTask;
-                    PatchHelper.Log("[GameStartup] LaunchMainMenu completed successfully!");
-                }
-            }
-            else
-            {
-                PatchHelper.Log("[GameStartup] ERROR: LaunchMainMenu method not found!");
-            }
+            PatchHelper.Log("[GameStartup] Transitioning to main menu via resilient SafeLaunchMainMenuAsync...");
+            await SafeLaunchMainMenuAsync(game, true);
 
             try
             {
@@ -948,5 +932,271 @@ internal static partial class PlatformPatches
         }
 
         PatchHelper.Log("[GameStartup] Resilient GameStartup finished successfully.");
+    }
+
+    private static void SetRootSceneContainerInternal(NGame game, NSceneContainer rsc)
+    {
+        try
+        {
+            var prop = typeof(NGame).GetProperty("RootSceneContainer", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            prop?.SetValue(game, rsc);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set RootSceneContainer property warning: {ex.Message}");
+        }
+
+        try
+        {
+            var field = typeof(NGame).GetField("<RootSceneContainer>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? typeof(NGame).GetField("_rootSceneContainer", BindingFlags.NonPublic | BindingFlags.Instance);
+            field?.SetValue(game, rsc);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set RootSceneContainer field warning: {ex.Message}");
+        }
+    }
+
+    private static void SetTransitionInternal(NGame game, NTransition tr)
+    {
+        try
+        {
+            var prop = typeof(NGame).GetProperty("Transition", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            prop?.SetValue(game, tr);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set Transition property warning: {ex.Message}");
+        }
+
+        try
+        {
+            var field = typeof(NGame).GetField("<Transition>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? typeof(NGame).GetField("_transition", BindingFlags.NonPublic | BindingFlags.Instance);
+            field?.SetValue(game, tr);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set Transition field warning: {ex.Message}");
+        }
+    }
+
+    private static void SetCurrentSceneInternal(NSceneContainer container, Control scene)
+    {
+        try
+        {
+            container.SetCurrentScene(scene);
+            return;
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] SetCurrentScene failed: {ex}. Using fallback attachment...");
+        }
+
+        if (scene.GetParent() == null)
+        {
+            container.AddChild(scene);
+        }
+
+        try
+        {
+            var prop = typeof(NSceneContainer).GetProperty("CurrentScene", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            prop?.SetValue(container, scene);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set CurrentScene property warning: {ex.Message}");
+        }
+
+        try
+        {
+            var field = typeof(NSceneContainer).GetField("<CurrentScene>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? typeof(NSceneContainer).GetField("_currentScene", BindingFlags.NonPublic | BindingFlags.Instance);
+            field?.SetValue(container, scene);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Set CurrentScene field warning: {ex.Message}");
+        }
+    }
+
+    private static bool LaunchMainMenuPrefix(NGame __instance, bool skipLogo, ref Task __result)
+    {
+        PatchHelper.Log($"[LaunchMainMenu] Intercepted NGame.LaunchMainMenu(skipLogo={skipLogo}) with resilient implementation.");
+        __result = SafeLaunchMainMenuAsync(__instance, true);
+        return false;
+    }
+
+    internal static async Task SafeLaunchMainMenuAsync(NGame game, bool skipLogo)
+    {
+        SafeReinstallNativeCrashHandlers();
+        PatchHelper.Log($"[LaunchMainMenu] Starting resilient SafeLaunchMainMenuAsync (skipLogo={skipLogo})...");
+
+        // 1. Ensure NGame node readiness
+        if (!game.IsNodeReady())
+        {
+            PatchHelper.Log("[LaunchMainMenu] Waiting for NGame node ready...");
+            await game.ToSignal(game, Node.SignalName.Ready);
+        }
+        PatchHelper.Log("[LaunchMainMenu] NGame node ready confirmed.");
+
+        // 2. Resolve or reconstruct RootSceneContainer
+        var rootSceneContainer = game.RootSceneContainer;
+        if (rootSceneContainer == null)
+        {
+            PatchHelper.Log("[LaunchMainMenu] game.RootSceneContainer is null, locating in scene tree...");
+            rootSceneContainer = game.GetNodeOrNull<NSceneContainer>("%RootSceneContainer")
+                ?? game.GetNodeOrNull<NSceneContainer>("RootSceneContainer");
+
+            if (rootSceneContainer == null)
+            {
+                foreach (var child in game.GetChildren())
+                {
+                    if (child is NSceneContainer sc)
+                    {
+                        rootSceneContainer = sc;
+                        PatchHelper.Log($"[LaunchMainMenu] Found NSceneContainer among children: {child.Name}");
+                        break;
+                    }
+                }
+            }
+
+            if (rootSceneContainer == null)
+            {
+                PatchHelper.Log("[LaunchMainMenu] RootSceneContainer not found in tree. Creating new NSceneContainer...");
+                rootSceneContainer = new NSceneContainer { Name = "RootSceneContainer" };
+                game.AddChild(rootSceneContainer);
+            }
+
+            SetRootSceneContainerInternal(game, rootSceneContainer);
+            PatchHelper.Log($"[LaunchMainMenu] RootSceneContainer resolved: {rootSceneContainer}");
+        }
+        else
+        {
+            PatchHelper.Log($"[LaunchMainMenu] game.RootSceneContainer is already populated: {rootSceneContainer}");
+        }
+
+        // 3. Resolve Transition if missing
+        if (game.Transition == null)
+        {
+            var transition = game.GetNodeOrNull<NTransition>("%GameTransitionRect")
+                ?? game.GetNodeOrNull<NTransition>("GameTransitionRect");
+
+            if (transition == null)
+            {
+                foreach (var child in game.GetChildren())
+                {
+                    if (child is NTransition tr)
+                    {
+                        transition = tr;
+                        break;
+                    }
+                }
+            }
+
+            if (transition != null)
+            {
+                SetTransitionInternal(game, transition);
+                PatchHelper.Log($"[LaunchMainMenu] Transition resolved: {transition}");
+            }
+        }
+
+        // 4. Preload main menu essentials
+        PatchHelper.Log("[LaunchMainMenu] Preloading MainMenuEssentials...");
+        try
+        {
+            var preloadTask = PreloadManager.LoadMainMenuEssentials();
+            if (preloadTask != null)
+                await preloadTask;
+            PatchHelper.Log("[LaunchMainMenu] PreloadManager.LoadMainMenuEssentials completed.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] PreloadManager.LoadMainMenuEssentials warning: {ex.Message}");
+        }
+
+        // 5. Instantiate NMainMenu
+        NMainMenu mainMenu = null;
+        PatchHelper.Log("[LaunchMainMenu] Creating NMainMenu instance...");
+        try
+        {
+            mainMenu = NMainMenu.Create(false);
+            PatchHelper.Log($"[LaunchMainMenu] NMainMenu.Create succeeded: {mainMenu}");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] NMainMenu.Create failed: {ex}. Attempting fallback direct scene instantiation...");
+            try
+            {
+                var scene = PreloadManager.Cache?.GetScene("res://scenes/screens/main_menu.tscn")
+                    ?? ResourceLoader.Load<PackedScene>("res://scenes/screens/main_menu.tscn");
+                if (scene != null)
+                {
+                    mainMenu = scene.Instantiate<NMainMenu>();
+                    PatchHelper.Log($"[LaunchMainMenu] Fallback PackedScene.Instantiate succeeded: {mainMenu}");
+                }
+            }
+            catch (Exception fallbackEx)
+            {
+                PatchHelper.Log($"[LaunchMainMenu] Fallback PackedScene instantiation failed: {fallbackEx}");
+            }
+        }
+
+        if (mainMenu == null)
+        {
+            PatchHelper.Log("[LaunchMainMenu] FATAL: NMainMenu could not be instantiated!");
+            throw new InvalidOperationException("Failed to instantiate NMainMenu");
+        }
+
+        // 6. Set current scene in RootSceneContainer
+        PatchHelper.Log("[LaunchMainMenu] Attaching NMainMenu to RootSceneContainer...");
+        if (rootSceneContainer != null)
+        {
+            SetCurrentSceneInternal(rootSceneContainer, mainMenu);
+            PatchHelper.Log("[LaunchMainMenu] NMainMenu attached to RootSceneContainer successfully.");
+        }
+        else
+        {
+            PatchHelper.Log("[LaunchMainMenu] WARNING: rootSceneContainer is null, adding mainMenu directly to game node...");
+            if (mainMenu.GetParent() == null)
+            {
+                game.AddChild(mainMenu);
+            }
+        }
+
+        // 7. Post-transition resource stats and deferred background asset loading
+        try
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Main menu reached. Godot ticks: {Time.GetTicksMsec():N0}ms");
+            NGame.LogResourceStats("main menu loaded (essential)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] LogResourceStats warning: {ex.Message}");
+        }
+
+        try
+        {
+            PatchHelper.Log("[LaunchMainMenu] Initiating LoadDeferredStartupAssetsAsync in background...");
+            var deferredMethod = typeof(NGame).GetMethod(
+                "LoadDeferredStartupAssetsAsync",
+                BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Instance
+            );
+            if (deferredMethod != null)
+            {
+                var deferredTask = deferredMethod.Invoke(game, null) as Task;
+                if (deferredTask != null)
+                {
+                    TaskHelper.RunSafely(deferredTask);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] LoadDeferredStartupAssetsAsync warning: {ex.Message}");
+        }
+
+        PatchHelper.Log("[LaunchMainMenu] SafeLaunchMainMenuAsync completed successfully!");
     }
 }

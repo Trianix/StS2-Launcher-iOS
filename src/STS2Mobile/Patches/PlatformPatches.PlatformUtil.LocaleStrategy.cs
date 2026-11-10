@@ -435,4 +435,33 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"NGame.GameStartup patch failed: {ex.Message}");
         }
     }
+
+    private static void ApplyLaunchMainMenuPatch(Harmony harmony)
+    {
+        try
+        {
+            var method = typeof(NGame).GetMethod(
+                "LaunchMainMenu",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                binder: null,
+                types: new[] { typeof(bool) },
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("NGame.LaunchMainMenu patch: LaunchMainMenu method not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(LaunchMainMenuPrefix)))
+            );
+            PatchHelper.Log("Patched NGame.LaunchMainMenu (resilient null-guarded main menu transition)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"NGame.LaunchMainMenu patch failed: {ex.Message}");
+        }
+    }
 }

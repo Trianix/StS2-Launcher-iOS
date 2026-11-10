@@ -1,8 +1,8 @@
 # STS2 iOS Port – Comprehensive Session Handover Document
-**Date:** November 10, 2026 (Updated: 3:00 PM AEST)  
+**Date:** November 10, 2026 (Updated: 3:45 PM AEST)  
 **Repository:** `https://github.com/Trianix/StS2-Launcher-iOS.git`  
 **Active Branch:** `feature/ios-port`  
-**Latest Commit:** [`443a830`](https://github.com/Trianix/StS2-Launcher-iOS/commit/443a8300ad8a49c4cf1b9cb86d061452bc5ca4a1) (Code fix commit: [`2b18fe0`](https://github.com/Trianix/StS2-Launcher-iOS/commit/2b18fe04edbc6c88b2d0d4fc936258388cdecfc4))  
+**Latest Commit:** [`08da61b`](https://github.com/Trianix/StS2-Launcher-iOS/commit/08da61b84c8a2b5e2d67451e037bc8be68f7b587) (`fix(mono): provide static ARM64 exception routines, add startup exception self-tests, and cut back error-swallowing`)  
 **Latest CI Build:** [Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764) — **Success**  
 **Build Artifact:** `STS2Launcher-iOS` (`STS2Launcher-0.2.436.ipa`)  
 
@@ -103,39 +103,56 @@ Implemented `GetModelDependencyPriority(Type type)` to sort all subtypes before 
 
 ---
 
-## 4. Current Repository State
+## 4. Root Cause Deep Dive: Mono Exception Handling Routines on Stock iOS
+
+### The Fundamental Obstacle
+In pure Mono interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`), JIT compilation is disabled. However, by default Mono initializes its runtime exception-handling routines (`restore_context`, `call_filter`, `throw_exception`, `rethrow_exception`, `rethrow_preserve_exception`, `throw_corlib_exception`) by dynamically emitting ARM64 machine code into heap memory via `mono_global_codeman_reserve` during `mono_exceptions_init()`.
+
+On stock iOS without an attached JIT debugger (no JIT entitlement, AMFI / W^X enforced):
+- Executing code located in dynamically allocated heap memory triggers an immediate, uncatchable hardware termination (`EXC_BAD_ACCESS (KERN_PROTECTION_FAILURE)` / `SIGBUS` / AMFI SIGKILL).
+- Whenever an exception unwound into non-interpreter code (`interp_throw` calling `mono_restore_context`), evaluated an exception filter (`call_filter`), or traversed native-to-interpreter boundaries, jumping to these codeman addresses abruptly terminated the process before managed catch blocks or signal handlers could run.
+
+### The Solution (Commit `08da61b`)
+1. **Pre-compiled Static ARM64 `.text` Trampolines (`patches/mono/android-net9.patch`):**
+   Added static, position-independent assembly implementations in `src/mono/mono/mini/exceptions-arm64.c`:
+   - `mono_restore_context_arm64`: Restores 32 SIMD `q0..q31` registers and integer registers directly from `MonoContext`, restores `sp`, and branches to `pc`.
+   - `mono_call_filter_arm64`: Sets up stack frame, restores callee-saved registers from `MonoContext`, executes the filter at `handler_ip`, saves results, restores caller registers, and returns.
+   - `mono_throw_exception_arm64`, `mono_rethrow_exception_arm64`, `mono_rethrow_preserve_exception_arm64`, `mono_throw_corlib_exception_arm64`: Construct standard frames and invoke `mono_arm_throw_exception`.
+   - `mono_arch_get_*`: Directly return the static `.text` function pointers without reserving codeman heap memory.
+2. **Startup Exception Diagnostic Self-Test Suite (`STS2Mobile.Diagnostics.ExceptionSelfTest`):**
+   Runs automatically after patch orchestration:
+   - **Test 1:** Plain throw/catch.
+   - **Test 2:** `Activator.CreateInstance` on a type whose static constructor (`.cctor`) fails.
+   - **Test 3:** `MethodInfo.Invoke` on a method that throws.
+   - **Test 4:** Harmony-detoured methods with both plain `try/catch` and `when (...)` exception filters.
+   - **Test 5:** Native-to-managed callback round-trip and internal exception handling via `sts2_test_native_callback_roundtrip`.
+3. **Cut Back Error-Swallowing Prefixes (`PlatformPatches.Prefixes.cs`):**
+   - In `ModelDb.Init` Pass 1: Immediately log any exception and inner exception details.
+   - In `ModelDb.Init` Pass 2: Log full exception details on any permanent failure.
+   - In `LocManager.Initialize`, `ModelDb.Init`, and `ModelDb.InitIds`: Rethrow unexpected errors rather than swallowing them.
+
+---
+
+## 5. Current Repository State
 
 - **Branch:** `feature/ios-port` (clean working tree).
 - **Core Files Modified:**
-  - `src/STS2Mobile/BootstrapTrace.cs`: Added `AutoFlush` and explicit flush on iOS.
-  - `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs`: Added `ReinstallNativeCrashHandlers`, dependency priority sorting, two-pass `ModelDbInitPrefix`, and `PrewarmJitPrefix`.
-  - `src/STS2Mobile/Patches/PlatformPatches.PlatformUtil.LocaleStrategy.cs`: Added `ApplyOneTimeInitializationPrewarmJitPatch`.
-  - `src/STS2Mobile/Patches/PlatformPatches.cs`: Wired up `ApplyOneTimeInitializationPrewarmJitPatch`.
-  - `ios/STS2Launcher/AppDelegate.mm`: Added `NSSetUncaughtExceptionHandler`, `std::terminate` handler, and reset `signal(sig, SIG_DFL)` before `raise`.
-- **CI Workflow:** `.github/workflows/build-ios.yml` running on `macos-15` with ccache enabled.
+  - `patches/mono/android-net9.patch`: Pre-compiled static ARM64 exception routines in `.text`.
+  - `src/STS2Mobile/Diagnostics/ExceptionSelfTest.cs`: Diagnostic self-test suite.
+  - `src/STS2Mobile/ModEntry.Apply.cs`: Wired `ExceptionSelfTest.Run(harmony)`.
+  - `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs`: Removed error-swallowing, added detailed Pass 1 logging.
+  - `ios/STS2Launcher/IOSGodotAppBridge.h` & `.mm`: Added `sts2_test_native_callback_roundtrip`.
+- **CI Workflow:** `.github/workflows/build-ios.yml` running on `macos-15`.
 - **Unit Tests:** `STS2Mobile.GameIdentityTests` passing **220/220** tests.
 
 ---
 
-## 5. Next Steps for the Next Session
+## 6. Next Steps for Next Session
 
-1. **User Testing with CI Build `#42752802764`:**
-   - Download `STS2Launcher-iOS` from [CI Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764).
-   - Install the updated IPA on the test device via AltStore, Sideloadly, or TrollStore.
-   - Launch the app, tap **Play Vanilla**, and observe startup.
-2. **Examine New Output Log (`app_output.log`):**
-   - Verify `[ModelDb.Init]` logs all model subtypes through completion:
-     ```text
-     [ModelDb.Init] Registering 1624 model subtypes in dependency order...
-     [ModelDb.Init] Pass 1 progress: 250/1624 ...
-     ...
-     [ModelDb.Init] ModelDb initialization complete. Total registered: 1624
-     [ModelDb.InitIds] ModelDb.InitIds complete.
-     ```
-   - Check if `OneTimeInitialization.ExecuteDeferred()` executes cleanly.
-3. **If Game Reaches Main Menu:**
-   - Verify that Godot scenes render correctly on Metal (`Forward Mobile`).
-   - Test touch input and UI navigation.
-   - Verify save file creation under `user://` (`UserDataPathProvider`).
-4. **If a New Crash Occurs:**
+1. **Monitor CI Build:**
+   Check GitHub Actions run for commit [`08da61b`](https://github.com/Trianix/StS2-Launcher-iOS/commit/08da61b84c8a2b5e2d67451e037bc8be68f7b587) (cache key invalidated for `android-net9.patch`, rebuilding Mono with static exception trampolines).
+2. **Device Verification:**
+   - Sideload the new IPA onto test device.
+   - Observe `[ExceptionSelfTest]` output at startup to verify all 5 test categories pass.
+   - Confirm `ModelDb.Init` completes registering all 1,624 models and transitions cleanly into `OneTimeInitialization.ExecuteDeferred()` and the main menu.
    - Because `AutoFlush` and native signal handlers are now fully armed, `app_output.log` will contain the exact failing line and/or full ARM64 register state and backtrace symbols.

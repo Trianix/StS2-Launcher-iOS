@@ -190,44 +190,4 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"LocManager.LoadLocCompletionFile patch failed: {ex.Message}");
         }
     }
-
-    private static void ApplyLocManagerSmartFormatPatch(Harmony harmony)
-    {
-        try
-        {
-            var sts2Asm = typeof(NGame).Assembly;
-            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
-            if (locManagerType == null)
-            {
-                PatchHelper.Log("Locale fix: LocManager not found, skipping SmartFormat patch");
-                return;
-            }
-
-            var method = locManagerType.GetMethod(
-                "SmartFormat",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
-            );
-            if (method == null)
-            {
-                PatchHelper.Log("Locale fix: LocManager.SmartFormat not found, skipping");
-                return;
-            }
-
-            var prefix = Prefix(nameof(SmartFormatPrefix));
-            var finalizer = Prefix(nameof(SmartFormatFinalizer));
-
-            harmony.Patch(
-                method,
-                prefix: prefix != null ? new HarmonyMethod(prefix) : null,
-                finalizer: finalizer != null ? new HarmonyMethod(finalizer) : null
-            );
-            PatchHelper.Log(
-                "Patched LocManager.SmartFormat (fallback and crash shield)"
-            );
-        }
-        catch (Exception ex)
-        {
-            PatchHelper.Log($"LocManager.SmartFormat patch failed: {ex.Message}");
-        }
-    }
 }

@@ -374,46 +374,4 @@ internal static partial class PlatformPatches
         }
         return false;
     }
-
-    private static bool SmartFormatPrefix(
-        object __instance,
-        LocString locString,
-        Dictionary<string, object> variables,
-        ref string __result
-    )
-    {
-        if (locString == null)
-        {
-            __result = string.Empty;
-            return false;
-        }
-
-        var field = __instance.GetType().GetField(
-            "_smartFormatter",
-            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public
-        );
-        var formatter = field?.GetValue(null);
-        if (formatter == null)
-        {
-            __result = locString.GetRawText() ?? string.Empty;
-            return false;
-        }
-
-        return true;
-    }
-
-    private static Exception SmartFormatFinalizer(
-        Exception __exception,
-        LocString locString,
-        ref string __result
-    )
-    {
-        if (__exception != null)
-        {
-            PatchHelper.Log($"LocManager.SmartFormat intercepted exception: {__exception.Message}");
-            __result = locString != null ? (locString.GetRawText() ?? string.Empty) : string.Empty;
-            return null;
-        }
-        return null;
-    }
 }

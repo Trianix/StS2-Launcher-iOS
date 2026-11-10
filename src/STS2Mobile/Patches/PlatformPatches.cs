@@ -96,6 +96,5 @@ internal static partial class PlatformPatches
         ApplyCultureInfoGetCultureInfoPatch(harmony);
         ApplyLoadLocFormattersPatch(harmony);
         ApplyLoadLocCompletionFilePatch(harmony);
-        ApplyLocManagerSmartFormatPatch(harmony);
     }
 }

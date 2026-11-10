@@ -1149,8 +1149,27 @@ internal static partial class PlatformPatches
             throw new InvalidOperationException("Failed to instantiate NMainMenu");
         }
 
-        // Ensure unique names in owner so GetNode("%Name") resolves properly for all child components
+        // Ensure unique names in owner so GetNode("%Name") resolves properly for direct child components of NMainMenu
         EnsureUniqueNamesInOwner(mainMenu, mainMenu);
+
+        // Explicitly suppress initial open state on PatchNotesScreen if present
+        try
+        {
+            if (mainMenu.PatchNotesScreen != null)
+            {
+                mainMenu.PatchNotesScreen.Visible = false;
+                HarmonyLib.Traverse.Create(mainMenu.PatchNotesScreen).Property("IsOpen").SetValue(false);
+                mainMenu.PatchNotesScreen.MouseFilter = Control.MouseFilterEnum.Ignore;
+                var color = mainMenu.PatchNotesScreen.Modulate;
+                color.A = 0f;
+                mainMenu.PatchNotesScreen.Modulate = color;
+                PatchHelper.Log("[LaunchMainMenu] Explicitly suppressed initial PatchNotesScreen");
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Suppress PatchNotesScreen warning: {ex.Message}");
+        }
 
         // 6. Set current scene in RootSceneContainer
         PatchHelper.Log("[LaunchMainMenu] Attaching NMainMenu to RootSceneContainer...");
@@ -1280,7 +1299,9 @@ internal static partial class PlatformPatches
             {
                 PatchHelper.Log($"[EnsureUniqueNamesInOwner] {child.Name}: {ex.Message}");
             }
-            EnsureUniqueNamesInOwner(child, owner);
+            // Do NOT recurse into child; each subscene (e.g. PatchNotesScreen, CharacterSelectScreen)
+            // manages its own scene tree and internal node names. Recursion causes cross-scene collisions
+            // and 60,000+ duplicate name warnings.
         }
     }
 
@@ -1289,7 +1310,13 @@ internal static partial class PlatformPatches
         try
         {
             EnsureUniqueNamesInOwner(__instance, __instance);
-            PatchHelper.Log("[MainMenuReadyPrefix] Unique names registered for NMainMenu children.");
+            if (__instance.PatchNotesScreen != null)
+            {
+                __instance.PatchNotesScreen.Visible = false;
+                HarmonyLib.Traverse.Create(__instance.PatchNotesScreen).Property("IsOpen").SetValue(false);
+                __instance.PatchNotesScreen.MouseFilter = Control.MouseFilterEnum.Ignore;
+            }
+            PatchHelper.Log("[MainMenuReadyPrefix] Unique names registered for direct NMainMenu children.");
         }
         catch (Exception ex)
         {

@@ -16,27 +16,43 @@ internal static class DevConsolePatches
     private const BindingFlags AllFlags =
         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
     private const string ReadyMethod = "_Ready";
+    private const string InstanceGetterMethod = "get_Instance";
     private const string TypeName = "MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole";
 
+    private static FieldInfo _instanceField;
+    private static MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole _dummyInstance;
     private static bool _loggedFirstHide;
     private static bool _loggedFirstSuppression;
+    private static bool _loggedFirstDummyInstance;
 
     internal static void Apply(Harmony harmony)
     {
-        var target = FindTarget();
-        if (target == null)
-            return;
+        var targetReady = FindTarget(ReadyMethod);
+        if (targetReady != null)
+        {
+            harmony.Patch(
+                targetReady,
+                finalizer: new HarmonyMethod(
+                    typeof(DevConsolePatches).GetMethod(nameof(ReadyFinalizer), AllFlags)
+                )
+            );
+            PatchHelper.Log("Patched NDevConsole._Ready finalizer");
+        }
 
-        harmony.Patch(
-            target,
-            finalizer: new HarmonyMethod(
-                typeof(DevConsolePatches).GetMethod(nameof(ReadyFinalizer), AllFlags)
-            )
-        );
-        PatchHelper.Log("Patched NDevConsole._Ready finalizer");
+        var targetInstance = FindTarget(InstanceGetterMethod);
+        if (targetInstance != null)
+        {
+            harmony.Patch(
+                targetInstance,
+                prefix: new HarmonyMethod(
+                    typeof(DevConsolePatches).GetMethod(nameof(GetInstancePrefix), AllFlags)
+                )
+            );
+            PatchHelper.Log("Patched NDevConsole.get_Instance prefix");
+        }
     }
 
-    private static MethodInfo FindTarget()
+    private static MethodInfo FindTarget(string methodName)
     {
         var type = typeof(NGame).Assembly.GetType(TypeName);
         if (type == null)
@@ -45,11 +61,50 @@ internal static class DevConsolePatches
             return null;
         }
 
-        var method = type.GetMethod(ReadyMethod, AllFlags);
+        var method = type.GetMethod(methodName, AllFlags);
         if (method == null)
-            PatchHelper.Log("DevConsolePatches: NDevConsole._Ready method not found; skipping");
+            PatchHelper.Log($"DevConsolePatches: NDevConsole.{methodName} method not found; skipping");
 
         return method;
+    }
+
+    private static bool GetInstancePrefix(ref MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole __result)
+    {
+        var type = typeof(MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole);
+        if (_instanceField == null)
+        {
+            _instanceField = type.GetField("_instance", AllFlags);
+        }
+
+        var inst = _instanceField?.GetValue(null) as MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole;
+        if (inst != null)
+        {
+            __result = inst;
+            return false;
+        }
+
+        // On mobile platforms where NDevConsole was suppressed or never added to the tree,
+        // callers like NHotkeyManager._UnhandledInput check NDevConsole.Instance.Visible.
+        // Return a hidden dummy instance to avoid InvalidOperationException.
+        if (_dummyInstance == null)
+        {
+            try
+            {
+                _dummyInstance = new MegaCrit.Sts2.Core.Nodes.Debug.NDevConsole { Visible = false };
+                if (!_loggedFirstDummyInstance)
+                {
+                    _loggedFirstDummyInstance = true;
+                    PatchHelper.Log("DevConsolePatches: created dummy hidden NDevConsole for safe Instance access");
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"DevConsolePatches: failed to create dummy NDevConsole ({ex.Message})");
+            }
+        }
+
+        __result = _dummyInstance;
+        return false;
     }
 
     private static Exception ReadyFinalizer(object __instance, Exception __exception)

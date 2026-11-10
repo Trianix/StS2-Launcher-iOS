@@ -190,4 +190,186 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"LocManager.LoadLocCompletionFile patch failed: {ex.Message}");
         }
     }
+
+    private static void ApplyLocManagerInitializePatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var locManagerType = sts2Asm.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
+            if (locManagerType == null)
+            {
+                PatchHelper.Log("LocManager patch: LocManager type not found, skipping Initialize patch");
+                return;
+            }
+
+            var method = locManagerType.GetMethod(
+                "Initialize",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("LocManager patch: Initialize not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(LocManagerInitializePrefix)))
+            );
+            PatchHelper.Log("Patched LocManager.Initialize (resilient directory handling)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"LocManager.Initialize patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyOneTimeInitializationExecuteEssentialPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var type = sts2Asm.GetType("MegaCrit.Sts2.Core.Helpers.OneTimeInitialization");
+            if (type == null)
+            {
+                PatchHelper.Log("OneTimeInitialization patch: OneTimeInitialization type not found, skipping");
+                return;
+            }
+
+            var method = type.GetMethod(
+                "ExecuteEssential",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("OneTimeInitialization patch: ExecuteEssential not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(ExecuteEssentialPrefix)))
+            );
+            PatchHelper.Log("Patched OneTimeInitialization.ExecuteEssential (diagnostic milestone logging)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"OneTimeInitialization.ExecuteEssential patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyModelDbInitPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var modelDbType = sts2Asm.GetType("MegaCrit.Sts2.Core.Models.ModelDb");
+            if (modelDbType == null)
+            {
+                PatchHelper.Log("ModelDb patch: ModelDb type not found, skipping Init patch");
+                return;
+            }
+
+            var method = modelDbType.GetMethod(
+                "Init",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("ModelDb patch: Init not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(ModelDbInitPrefix)))
+            );
+            PatchHelper.Log("Patched ModelDb.Init (resilient per-model error isolation)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"ModelDb.Init patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyModelDbInitIdsPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var modelDbType = sts2Asm.GetType("MegaCrit.Sts2.Core.Models.ModelDb");
+            if (modelDbType == null)
+            {
+                PatchHelper.Log("ModelDb patch: ModelDb type not found, skipping InitIds patch");
+                return;
+            }
+
+            var method = modelDbType.GetMethod(
+                "InitIds",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("ModelDb patch: InitIds not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(ModelDbInitIdsPrefix)))
+            );
+            PatchHelper.Log("Patched ModelDb.InitIds (resilient id binding)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"ModelDb.InitIds patch failed: {ex.Message}");
+        }
+    }
+
+    private static void ApplyModelIdSerializationCacheInitPatch(Harmony harmony)
+    {
+        try
+        {
+            var sts2Asm = typeof(NGame).Assembly;
+            var type = sts2Asm.GetType("MegaCrit.Sts2.Core.Multiplayer.Serialization.ModelIdSerializationCache");
+            if (type == null)
+            {
+                PatchHelper.Log("ModelIdSerializationCache patch: ModelIdSerializationCache type not found, skipping");
+                return;
+            }
+
+            var method = type.GetMethod(
+                "Init",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null
+            );
+            if (method == null)
+            {
+                PatchHelper.Log("ModelIdSerializationCache patch: Init not found, skipping");
+                return;
+            }
+
+            harmony.Patch(
+                method,
+                prefix: new HarmonyMethod(Prefix(nameof(ModelIdSerializationCacheInitPrefix)))
+            );
+            PatchHelper.Log("Patched ModelIdSerializationCache.Init (diagnostic logging)");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"ModelIdSerializationCache.Init patch failed: {ex.Message}");
+        }
+    }
 }

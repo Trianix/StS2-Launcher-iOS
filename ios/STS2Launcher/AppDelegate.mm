@@ -117,11 +117,26 @@ static void sts2_crash_signal_handler(int sig, siginfo_t *info, void *uap) {
     raise(sig);
 }
 
+static char sAltStack[131072]; // 128 KB dedicated alternate signal stack
+
+static void sts2_setup_alt_stack() {
+    stack_t ss;
+    memset(&ss, 0, sizeof(ss));
+    ss.ss_sp = sAltStack;
+    ss.ss_size = sizeof(sAltStack);
+    ss.ss_flags = 0;
+    if (sigaltstack(&ss, nullptr) != 0) {
+        fprintf(stderr, "[STS2Launcher iOS] Warning: sigaltstack failed: %d\n", errno);
+    }
+}
+
 static void sts2_install_crash_handlers() {
+    sts2_setup_alt_stack();
+
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = sts2_crash_signal_handler;
-    sa.sa_flags = SA_SIGINFO;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
 
     sigaction(SIGSEGV, &sa, nullptr);

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Saves;
@@ -373,5 +374,191 @@ internal static partial class PlatformPatches
             PatchHelper.Log($"LocManager.LoadLocCompletionFile failed gracefully: {ex.Message}");
         }
         return false;
+    }
+
+    private static bool LocManagerInitializePrefix()
+    {
+        try
+        {
+            PatchHelper.Log("[LocManager.Initialize] Initializing LocManager instance...");
+            var locManager = new LocManager();
+
+            var prop = typeof(LocManager).GetProperty(
+                "Instance",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (prop != null)
+            {
+                prop.SetValue(null, locManager);
+            }
+            else
+            {
+                var field = typeof(LocManager).GetField(
+                    "<Instance>k__BackingField",
+                    BindingFlags.NonPublic | BindingFlags.Static
+                );
+                field?.SetValue(null, locManager);
+            }
+
+            try
+            {
+                string path = Godot.ProjectSettings.GlobalizePath("user://localization_override");
+                if (!string.IsNullOrEmpty(path) && !Godot.DirAccess.DirExistsAbsolute(path))
+                {
+                    var err = Godot.DirAccess.MakeDirAbsolute(path);
+                    PatchHelper.Log($"[LocManager.Initialize] MakeDirAbsolute('{path}') returned {err}");
+                }
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[LocManager.Initialize] Directory check safe ignore: {ex.Message}");
+            }
+
+            PatchHelper.Log("[LocManager.Initialize] Completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LocManager.Initialize] Error: {ex}");
+        }
+
+        return false; // Skip original method
+    }
+
+    private static bool ExecuteEssentialPrefix()
+    {
+        PatchHelper.Log("[OneTimeInitialization.ExecuteEssential] Entering ExecuteEssential...");
+        return true; // Let original run
+    }
+
+    private static bool ModelDbInitPrefix()
+    {
+        try
+        {
+            PatchHelper.Log("[ModelDb.Init] Starting resilient ModelDb.Init...");
+            var field = typeof(ModelDb).GetField(
+                "_contentById",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (field == null)
+            {
+                PatchHelper.Log("[ModelDb.Init] ERROR: _contentById field not found!");
+                return true;
+            }
+
+            var contentById = (Dictionary<ModelId, AbstractModel>)field.GetValue(null);
+            if (contentById == null)
+            {
+                contentById = new Dictionary<ModelId, AbstractModel>(4096);
+                field.SetValue(null, contentById);
+            }
+
+            Type[] subtypes;
+            try
+            {
+                subtypes = ModelDb.AllAbstractModelSubtypes;
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[ModelDb.Init] Failed to get AllAbstractModelSubtypes: {ex}");
+                return true;
+            }
+
+            if (subtypes == null || subtypes.Length == 0)
+            {
+                PatchHelper.Log("[ModelDb.Init] Warning: AllAbstractModelSubtypes returned 0 types.");
+                return false;
+            }
+
+            PatchHelper.Log($"[ModelDb.Init] Registering {subtypes.Length} model subtypes...");
+            int succeeded = 0;
+            int failed = 0;
+
+            for (int i = 0; i < subtypes.Length; i++)
+            {
+                var type = subtypes[i];
+                if (type == null)
+                    continue;
+
+                try
+                {
+                    var id = ModelDb.GetId(type);
+                    var model = (AbstractModel)Activator.CreateInstance(type);
+                    contentById[id] = model;
+                    succeeded++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    PatchHelper.Log($"[ModelDb.Init] Failed to instantiate {type.FullName}: {ex.Message}");
+                }
+
+                if ((i + 1) % 250 == 0 || i + 1 == subtypes.Length)
+                {
+                    PatchHelper.Log($"[ModelDb.Init] Progress: {i + 1}/{subtypes.Length} instantiated ({succeeded} ok, {failed} failed).");
+                }
+            }
+
+            PatchHelper.Log($"[ModelDb.Init] ModelDb initialization complete. Total registered: {contentById.Count} ({succeeded} ok, {failed} failed).");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[ModelDb.Init] Resilient ModelDb.Init encountered unexpected error: {ex}");
+        }
+
+        return false; // Skip original method
+    }
+
+    private static bool ModelIdSerializationCacheInitPrefix()
+    {
+        PatchHelper.Log("[ModelIdSerializationCache.Init] Running ModelIdSerializationCache.Init...");
+        return true; // Let original run
+    }
+
+    private static bool ModelDbInitIdsPrefix()
+    {
+        try
+        {
+            PatchHelper.Log("[ModelDb.InitIds] Starting resilient ModelDb.InitIds...");
+            var field = typeof(ModelDb).GetField(
+                "_contentById",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+            if (field == null)
+            {
+                PatchHelper.Log("[ModelDb.InitIds] ERROR: _contentById field not found!");
+                return true;
+            }
+
+            var contentById = (Dictionary<ModelId, AbstractModel>)field.GetValue(null);
+            if (contentById == null)
+            {
+                PatchHelper.Log("[ModelDb.InitIds] Warning: _contentById is null!");
+                return false;
+            }
+
+            int succeeded = 0;
+            int failed = 0;
+            foreach (var kvp in contentById)
+            {
+                try
+                {
+                    kvp.Value.InitId(kvp.Key);
+                    succeeded++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    PatchHelper.Log($"[ModelDb.InitIds] Failed to InitId for {kvp.Key}: {ex.Message}");
+                }
+            }
+
+            PatchHelper.Log($"[ModelDb.InitIds] ModelDb.InitIds complete. {succeeded} initialized, {failed} failed.");
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[ModelDb.InitIds] Resilient InitIds encountered unexpected error: {ex}");
+        }
+
+        return false; // Skip original method
     }
 }

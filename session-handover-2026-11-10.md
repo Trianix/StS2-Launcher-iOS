@@ -1,92 +1,141 @@
-# STS2 iOS Port – Session Handover Document
-**Date:** November 10, 2026  
+# STS2 iOS Port – Comprehensive Session Handover Document
+**Date:** November 10, 2026 (Updated: 3:00 PM AEST)  
 **Repository:** `https://github.com/Trianix/StS2-Launcher-iOS.git`  
 **Active Branch:** `feature/ios-port`  
+**Latest Commit:** [`2b18fe0`](https://github.com/Trianix/StS2-Launcher-iOS/commit/2b18fe04edbc6c88b2d0d4fc936258388cdecfc4) (`fix(ios): resolve ModelDb dependency order crash and improve crash diagnostics`)  
+**Latest CI Build:** [Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764) — **Success**  
+**Build Artifact:** `STS2Launcher-iOS` (`STS2Launcher-0.2.436.ipa`)  
 
 ---
 
-## 1. Executive Summary & Context
+## 1. Executive Summary & Session Trajectory
 
-Following the previous session fixes (AMFI SIGKILL bypass, shader warmup Jetsam OOM bypass, Mono interp `MINT_LDSTR_DYNAMIC -> MINT_LDSTR` opcode rewriting, and ISO 639-1 fast locale mapping), the latest test run was captured in `app_output(12).log`.
+During this session, we transitioned from early launcher boot issues to advancing game engine initialization deep into Slay the Spire 2's core systems. Through four successive device test cycles (`app_output(12).log` through `app_output(16).log`), we identified and resolved cascading issues across iOS runtime limitations, .NET globalization invariance, Mono interpreter quirks, and game model dependency order:
 
-Analysis of `app_output(12).log` identified two critical bugs:
-1. **AutoLaunch Failure (Line 782):**
-   `InvalidOperationException: No valid unconsumed Android restart request is available.`
-   Prevented the launcher from proceeding automatically into the game scene, leaving the app waiting at the launcher screen until the user manually tapped the launch button.
-2. **Globalization-Invariant Mode Crash During Game Startup (Lines 2089–2093):**
-   Game startup halted during localization initialization (`LocManager.Initialize()`) right as `SmartFormat.ZString.dll` was loaded. Under `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`, calls to `CultureInfo.GetCultureInfo(name)` throw `CultureNotFoundException: Only the invariant culture is supported in globalization-invariant mode.` This prevented `LocManager.CultureInfoFromThreeLetterCode`, `LocManager..cctor`, and `SmartFormat`'s `PluralLocalizationFormatter` from operating.
+1. **AutoLaunch In-Process Transition (`app_output(12).log`):**  
+   Fixed `InvalidOperationException` where Android-specific restart restoration was erroneously invoked on iOS.
+2. **Globalization-Invariant Mode Crash (`app_output(12).log`):**  
+   Redirected all `CultureInfo.GetCultureInfo` calls to `CultureInfo.InvariantCulture` to prevent `CultureNotFoundException` on iOS.
+3. **Missing `System.Runtime.CompilerServices.Unsafe` Facade (`app_output(13).log`):**  
+   Bundled `Unsafe.dll` (v4.0.4.1) for `SmartFormat.ZString.dll` into the IPA packaging script (`build-ios-local.sh`).
+4. **Mono Interpreter Dynamic Method Filter Failure (`app_output(14).log`):**  
+   Mono pure interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`) does not support IL exception filters (`MINT_MONO_FILTER`). Removed the Harmony detour on `SmartFormat` and replaced it with a resilient C# reflection formatter initializer (`LoadLocFormattersPrefix`).
+5. **Silent Termination at `LocManager.Initialize()` (`app_output(15).log`):**  
+   Patched `LocManager.Initialize` with safe directory creation, isolated `ModelDb.Init` and `ModelDb.InitIds`, and installed an alternate signal stack (`sigaltstack`) in `AppDelegate.mm`.
+6. **Sudden Abort in `ModelDb.Init` after 500 Models (`app_output(16).log`):**  
+   Identified that `BowlbugsNormal` (index 655) and other `EncounterModel`/`EventModel` subclasses execute `ModelDb.Monster<...>()` and `ModelDb.Relic<...>()` in static field initializers before those prerequisite types are loaded into `_contentById`. Reordered type loading into dependency tiers with a two-pass retry mechanism, skipped JIT prewarming (`PrewarmJit`), enabled stream `AutoFlush`, and installed native Objective-C/C++ crash hooks.
 
 ---
 
-## 2. Issues Investigated & Resolved
+## 2. Deep Dive: The `ModelDb.Init` Crash (`app_output(16).log`)
 
-### 1. AutoLaunch Blocking on iOS (`app_output(12).log`, line 782)
-- **Symptom:**
+### The Symptom
+In `app_output(16).log` (PID 11954) and `app_output_prev(2).log` (PID 11951), the game advanced past all previous roadblocks:
+- `OneTimeInitialization.ExecuteEssential` entered cleanly.
+- `AtlasManager.LoadEssentialAtlases` loaded `ui_atlas` (102 sprites) and `compressed` (45 sprites).
+- `LocManager.Initialize` completed successfully (`eng` locale loaded, formatters registered).
+- `ModelDb.Init` began registering 1,624 subtypes:
   ```text
-  [Launcher] Launch blocked: launch setup failed (InvalidOperationException: No valid unconsumed Android restart request is available.)
+  2026-11-10 14:20:01.188 STS2Launcher[11954:530739] [STS2Mobile] [ModelDb.Init] Progress: 250/1624 instantiated (250 ok, 0 failed).
+  2026-11-10 14:20:01.220 STS2Launcher[11954:530739] [STS2Mobile] [ModelDb.Init] Progress: 500/1624 instantiated (500 ok, 0 failed).
   ```
-- **Root Cause:**
-  `LauncherUI.AutoLaunch.cs` detects `STS2_AUTO_LAUNCH_GAME=1` set by `AppDelegate.mm` when an authorized runtime slot is present. It triggers `_controller.AutoLaunchRequested(safeLaunch)`, setting `plan.Source = LauncherLaunchSource.AutoLaunch`.
-  In `LauncherLaunchCoordinator.Attempt.cs`:
-  ```csharp
-  var restoringPendingAttempt = string.Equals(plan.Source, LauncherLaunchSource.AutoLaunch, StringComparison.Ordinal);
-  var restartRequest = restoringPendingAttempt ? LauncherRestartRequest.ConsumeRestored() : null;
-  ```
-  On Android, AutoLaunch restores a serialized restart request passed across process recreation via `AndroidGodotAppBridge`. On iOS, apps run in-process and cannot restart themselves; AutoLaunch is an initial direct launch rather than an Android process restoration. Calling `AndroidGodotAppBridge.ConsumeLaunchRestartRequest()` returned an empty payload, throwing `InvalidOperationException`.
-- **Fix:**
-  - In `src/STS2Mobile/Launcher/LauncherLaunchCoordinator.Attempt.cs`, guarded `restoringPendingAttempt` with `!OperatingSystem.IsIOS()`:
-    ```csharp
-    var restoringPendingAttempt = !OperatingSystem.IsIOS() && string.Equals(
-        plan.Source,
-        LauncherLaunchSource.AutoLaunch,
-        StringComparison.Ordinal
-    );
-    ```
-  - In `src/STS2Mobile/Launcher/LauncherRestartRequest.cs`, guarded `ConsumeRestored()` with `if (OperatingSystem.IsIOS()) return null;`.
-  - On iOS, `attemptId` is now freshly allocated, `LauncherHandoffStateOwner.Shared.Begin(attemptId)` accepts it cleanly, and `TrySignalInProcessLaunch` starts the game automatically.
+- The process abruptly died between models 500 and 750 without logging an error.
 
-### 2. Globalization-Invariant Mode Crash During Startup (`app_output(12).log`, lines 2089–2093)
-- **Symptom:**
-  Execution halted during `LocManager.Initialize()`:
-  ```text
-  [WARN] Running in .NET globalization-invariant mode. Locale-specific formatting will be disabled.
-  [INFO] Initializing language for the first time from platform locale: en_AU -> eng
-  [INFO] Loading locale path=res://localization/eng
-  .NET: Loading assembly 'SmartFormat.ZString.dll' ...
-  ```
-- **Root Cause:**
-  - `AppDelegate.mm` enables `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` on iOS to prevent ICU data dependencies and missing native symbols.
-  - In globalization-invariant mode in .NET, `CultureInfo.GetCultureInfo(name)` or `new CultureInfo(name)` for any non-empty name throws:
-    `CultureNotFoundException: Only the invariant culture is supported in globalization-invariant mode. (Parameter 'name') en is an invalid culture identifier.`
-  - In `LocManager.SetLanguageInternal`, it calls `LocManager.CultureInfoFromThreeLetterCode("eng")`, which executes `CultureInfo.GetCultureInfo("en")`.
-  - In `LocManager..cctor`, static initialization calls `CultureInfo.GetCultureInfo("en")` to populate `_englishCultureInfo`.
-  - In `SmartFormat.Extensions.PluralLocalizationFormatter`, CLDR pluralization rule resolution checks `if (cultureInfo.Equals(CultureInfo.InvariantCulture)) cultureInfo = CultureInfo.GetCultureInfo("en");`.
-- **Fix:**
-  - In `src/STS2Mobile/Patches/PlatformPatches.PlatformUtil.LocaleStrategy.cs`:
-    - Added `ApplyLocManagerCulturePatch`: Harmony prefix for `LocManager.CultureInfoFromThreeLetterCode` returning `CultureInfo.InvariantCulture`.
-    - Added `ApplyCultureInfoGetCultureInfoPatch`: Harmony prefix for `System.Globalization.CultureInfo.GetCultureInfo(string)` returning `CultureInfo.InvariantCulture`.
-  - In `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs`:
-    - Implemented `CultureInfoFromThreeLetterCodePrefix` and `GetCultureInfoPrefix` returning `CultureInfo.InvariantCulture`.
-  - In `src/STS2Mobile/Patches/PlatformPatches.cs`:
-    - Registered both patches during startup orchestration under `Platform compatibility`.
-  - This ensures all culture queries throughout the game engine, localization tables, and string formatters safely receive `CultureInfo.InvariantCulture` without unhandled exceptions.
+### Root Cause Analysis
+1. **Source-Generated Array Order vs. Static Constructor Dependencies:**
+   - The engine iterates through `AbstractModelSubtypes.All` (1,613 types generated in alphabetical namespace order):
+     - `Achievements` (0..8)
+     - `Acts` (9..13)
+     - `Afflictions` (14..24)
+     - `CardPools` (25..34)
+     - `Cards` (35..639) — `Shroud` is at index 500
+     - `Enchantments` (640..652)
+     - **`Encounters` (653..747)** — `AxebotsNormal` at 653, `BowlbugsNormal` at 655, `CultistsNormal` at 665
+     - **`Events` (748..816)** — `ColossalFlower` at 756, `Darv` at 758, `DollRoom` at 762, `FakeMerchant` at 766
+     - **`Monsters` (840..965)** — `BowlbugEgg` at 842, `CalcifiedCultist` at 850
+     - `Orbs`, `Potions` (1000+), `Powers`, **`Relics` (1300+)**
+2. **Circular Lookup During Static Field Initialization:**
+   - Decompilation of `BowlbugsNormal` revealed:
+     ```csharp
+     public sealed class BowlbugsNormal : EncounterModel
+     {
+         private static readonly Dictionary<MonsterModel, int> _workerValidCounts = new Dictionary<MonsterModel, int>
+         {
+             { ModelDb.Monster<BowlbugEgg>(), 1 },
+             { ModelDb.Monster<BowlbugSilk>(), 1 },
+             { ModelDb.Monster<BowlbugNectar>(), 1 }
+         };
+     ...
+     ```
+   - When `Activator.CreateInstance(typeof(BowlbugsNormal))` is called at index 655, the CLR executes its static constructor (`.cctor`).
+   - `ModelDb.Monster<BowlbugEgg>()` calls `(BowlbugEgg)_contentById[GetId<BowlbugEgg>()]`.
+   - Because `BowlbugEgg` is at index 842, it is **not yet in `_contentById`**.
+   - `_contentById[id]` throws `KeyNotFoundException`, which wraps into a `TypeInitializationException`.
+   - The same circular dependency exists in `CultistsNormal` (`CalcifiedCultist`), `FlyconidNormal` (`LeafSlimeM`), `RubyRaidersNormal` (`AxeRubyRaider`), `SlimesWeak` (`LeafSlimeS`), `Darv` (`Astrolabe`, `BlackStar`), `DollRoom` (`DaughterOfTheWind`), and `FakeMerchant` (`FakeAnchor`).
+3. **Mono Interpreter Abort on Static Initializer Exception:**
+   - In pure Mono interpreter mode, unhandled exceptions inside `.cctor` during `Activator.CreateInstance` can lead to native interpreter assertion failures (`g_assert` / `mono_interp_exec_method`), abruptly aborting the process.
+4. **Log Truncation from Missing Stream Flushing:**
+   - In .NET, `Console.Error` is a buffered `TextWriter`. Without `AutoFlush = true` or explicit `Flush()`, entries between index 500 and index 655 sat in memory buffers and were lost upon process termination.
+   - Mono runtime initialization had also replaced the initial crash signal handlers installed in `+load`.
 
 ---
 
-## 3. Modified Files
+## 3. Comprehensive Fixes Applied in Commit `2b18fe0`
 
-| File | Change |
-|------|--------|
-| `src/STS2Mobile/Launcher/LauncherLaunchCoordinator.Attempt.cs` | Guarded `restoringPendingAttempt` with `!OperatingSystem.IsIOS()` for in-process auto-launch. |
-| `src/STS2Mobile/Launcher/LauncherRestartRequest.cs` | Guarded `ConsumeRestored()` with `if (OperatingSystem.IsIOS()) return null;`. |
-| `src/STS2Mobile/Patches/PlatformPatches.PlatformUtil.LocaleStrategy.cs` | Added `ApplyLocManagerCulturePatch` and `ApplyCultureInfoGetCultureInfoPatch`. |
-| `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs` | Added `CultureInfoFromThreeLetterCodePrefix` and `GetCultureInfoPrefix` handlers. |
-| `src/STS2Mobile/Patches/PlatformPatches.cs` | Registered `ApplyLocManagerCulturePatch` and `ApplyCultureInfoGetCultureInfoPatch`. |
+### A. Dependency-Tiered Model Registration (`PlatformPatches.Prefixes.cs`)
+Implemented `GetModelDependencyPriority(Type type)` to sort all subtypes before registration:
+- **Tier 0 (Prerequisites / Zero Cross-Dependencies):** `MonsterModel`, `PotionModel`, `PowerModel`, `AfflictionModel`, `EnchantmentModel`, `CardModel`, `CardPoolModel`, `OrbModel`, `CharacterModel`, `ActModel`, `AchievementModel`.
+- **Tier 1 (Relics):** `RelicModel` (e.g. `Cauldron`, which queries `PotionModel`).
+- **Tier 2 (Encounters & Events):** `EncounterModel` and `EventModel` (which query `MonsterModel` and `RelicModel`).
+- **Tier 3:** All remaining types.
+
+### B. Two-Pass Resilient Loading
+- **Pass 1:** Instantiates models in dependency order. Any model that throws is safely captured and added to a `deferred` list instead of halting execution.
+- **Pass 2:** Retries deferred models once all other models are registered in `_contentById`. Any model that still fails is logged with its full `InnerException` and skipped so the game engine proceeds unaffected.
+
+### C. JIT Prewarm Suppression on iOS
+- Patched `OneTimeInitialization.PrewarmJit` to return `false` on iOS. In pure interpreter mode (`MONO_AOT_MODE_INTERP_ONLY = 8`), `RuntimeHelpers.PrepareMethod` has no JIT compiler to prewarm and risks emitting unmapped trampolines.
+
+### D. Diagnostics & Crash Telemetry
+- Enabled `AutoFlush` on `Console.Error` and `Console.Out` in `BootstrapTrace` static constructor, with explicit `Console.Error.Flush()` on every iOS log call.
+- Re-installed native crash signal handlers (`sts2_reinstall_crash_handlers`) immediately before `ExecuteEssential` and `ModelDb.Init` so they remain active over Mono's runtime defaults.
+- Added `NSSetUncaughtExceptionHandler` and `std::terminate` handlers in `AppDelegate.mm`.
 
 ---
 
-## 4. Verification
+## 4. Current Repository State
 
-- **Compilation:** `STS2Mobile.csproj` builds cleanly with 0 errors.
-- **Unit Tests:** `STS2Mobile.GameIdentityTests` executed: **220 passed, 0 failed**.
-- **Detour Compatibility:** Tested Harmony patching on `CultureInfo.GetCultureInfo(string)` under globalization-invariant mode; verified clean redirection to `CultureInfo.InvariantCulture`.
+- **Branch:** `feature/ios-port` (clean working tree).
+- **Core Files Modified:**
+  - `src/STS2Mobile/BootstrapTrace.cs`: Added `AutoFlush` and explicit flush on iOS.
+  - `src/STS2Mobile/Patches/PlatformPatches.Prefixes.cs`: Added `ReinstallNativeCrashHandlers`, dependency priority sorting, two-pass `ModelDbInitPrefix`, and `PrewarmJitPrefix`.
+  - `src/STS2Mobile/Patches/PlatformPatches.PlatformUtil.LocaleStrategy.cs`: Added `ApplyOneTimeInitializationPrewarmJitPatch`.
+  - `src/STS2Mobile/Patches/PlatformPatches.cs`: Wired up `ApplyOneTimeInitializationPrewarmJitPatch`.
+  - `ios/STS2Launcher/AppDelegate.mm`: Added `NSSetUncaughtExceptionHandler`, `std::terminate` handler, and reset `signal(sig, SIG_DFL)` before `raise`.
+- **CI Workflow:** `.github/workflows/build-ios.yml` running on `macos-15` with ccache enabled.
+- **Unit Tests:** `STS2Mobile.GameIdentityTests` passing **220/220** tests.
+
+---
+
+## 5. Next Steps for the Next Session
+
+1. **User Testing with CI Build `#42752802764`:**
+   - Download `STS2Launcher-iOS` from [CI Run #42752802764](https://github.com/Trianix/StS2-Launcher-iOS/actions/runs/42752802764).
+   - Install the updated IPA on the test device via AltStore, Sideloadly, or TrollStore.
+   - Launch the app, tap **Play Vanilla**, and observe startup.
+2. **Examine New Output Log (`app_output.log`):**
+   - Verify `[ModelDb.Init]` logs all model subtypes through completion:
+     ```text
+     [ModelDb.Init] Registering 1624 model subtypes in dependency order...
+     [ModelDb.Init] Pass 1 progress: 250/1624 ...
+     ...
+     [ModelDb.Init] ModelDb initialization complete. Total registered: 1624
+     [ModelDb.InitIds] ModelDb.InitIds complete.
+     ```
+   - Check if `OneTimeInitialization.ExecuteDeferred()` executes cleanly.
+3. **If Game Reaches Main Menu:**
+   - Verify that Godot scenes render correctly on Metal (`Forward Mobile`).
+   - Test touch input and UI navigation.
+   - Verify save file creation under `user://` (`UserDataPathProvider`).
+4. **If a New Crash Occurs:**
+   - Because `AutoFlush` and native signal handlers are now fully armed, `app_output.log` will contain the exact failing line and/or full ARM64 register state and backtrace symbols.

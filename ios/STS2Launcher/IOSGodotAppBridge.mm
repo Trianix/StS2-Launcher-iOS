@@ -524,9 +524,11 @@ IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void
     if (!compiled_dst->transformed || !compiled_dst->code) {
         char *src_name = mono_method_full_name(src_mono_method, 1);
         char *dst_name = mono_method_full_name(dst_mono_method, 1);
-        NSLog(@"[STS2Launcher iOS] Failed to transform detour target %s -> %s",
+        NSLog(@"[STS2Launcher iOS] Failed to transform detour target %s -> %s (target transformed=%d optimized=%d code=%p type=%u; compiled transformed=%d optimized=%d code=%p type=%u)",
               src_name ? src_name : "<null>",
-              dst_name ? dst_name : "<null>");
+              dst_name ? dst_name : "<null>",
+              dst_imethod->transformed, dst_imethod->optimized, dst_imethod->code, dst_imethod->code_type,
+              compiled_dst->transformed, compiled_dst->optimized, compiled_dst->code, compiled_dst->code_type);
         if (src_name) free(src_name);
         if (dst_name) free(dst_name);
         return;

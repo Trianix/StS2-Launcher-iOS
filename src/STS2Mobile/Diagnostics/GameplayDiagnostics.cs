@@ -91,7 +91,13 @@ internal static class GameplayDiagnostics
         if (!ProbeEnabled || _probeScheduled) return;
         _probeScheduled = true;
         var stableHost = NGame.Instance as Node ?? host;
-        Callable.From(() => _ = RunProbes(stableHost)).CallDeferred();
+        // Godot Callable delegates must return void or a Variant-compatible
+        // value. Returning the probe Task asks Godot to marshal Task as a
+        // Variant, which raises from the engine callback before probes finish.
+        Callable.From(() =>
+        {
+            _ = RunProbes(stableHost);
+        }).CallDeferred();
     }
 
     private static async System.Threading.Tasks.Task RunProbes(Node host)

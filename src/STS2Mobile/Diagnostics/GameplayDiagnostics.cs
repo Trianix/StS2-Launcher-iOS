@@ -48,6 +48,7 @@ internal static class GameplayDiagnostics
             pckSha256 = validation.SelectedPckSha256, identity = validation.GameIdentityId,
             runtimePack = validation.RuntimePackId, isolatedSaveDirectory = GameplayTestSession.SaveDirectory,
         };
+        if (ProbeEnabled) CaptureDailyRunInitializer(typeof(NGame).Assembly);
         game.TreeExiting += () => { lock (Gate) { Report.Phase = "shutdown"; Persist(); } };
         Checkpoint("game:enter-tree", game);
     }
@@ -151,6 +152,43 @@ internal static class GameplayDiagnostics
             catch (Exception) { }
         }
         return "unavailable:no-matching-loaded-module";
+    }
+
+    private static void CaptureDailyRunInitializer(Assembly assembly)
+    {
+        const string typeName = "MegaCrit.Sts2.Core.Nodes.Screens.DailyRun.NDailyRunScreen";
+        var candidates = new[]
+        {
+            assembly.Location,
+            Path.Combine(AppPaths.AppPrivateDataDir, ".godot", "mono", "publish", "arm64", "sts2.dll"),
+        };
+        foreach (var path in candidates.Distinct(StringComparer.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) continue;
+            try
+            {
+                using var definition = Mono.Cecil.AssemblyDefinition.ReadAssembly(path);
+                if (definition.MainModule.Mvid != assembly.ManifestModule.ModuleVersionId) continue;
+                var type = definition.MainModule.GetType(typeName);
+                var initializer = type?.Methods.FirstOrDefault(method => method.IsConstructor && method.IsStatic);
+                if (initializer?.HasBody != true)
+                {
+                    Result("NDailyRunScreen..cctor:il", "blocked", "Matching game assembly has no readable static initializer body.");
+                    return;
+                }
+                var fields = string.Join(",", type.Fields.Where(field => field.IsStatic)
+                    .Select(field => field.Name + ":" + field.FieldType.FullName));
+                var instructions = string.Join(" | ", initializer.Body.Instructions.Select(instruction => instruction.ToString()));
+                Result("NDailyRunScreen..cctor:il", "observed", "staticFields=" + fields + "; instructions=" + instructions);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Result("NDailyRunScreen..cctor:il", "blocked", ex.GetType().Name + ": " + ex.Message);
+                return;
+            }
+        }
+        Result("NDailyRunScreen..cctor:il", "blocked", "Could not locate the matching staged game assembly.");
     }
 
     private static void Persist()

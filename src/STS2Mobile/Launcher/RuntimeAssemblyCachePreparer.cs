@@ -107,6 +107,15 @@ internal sealed class RuntimeAssemblyCachePreparer : IRuntimeAssemblyCachePrepar
                 }
             }
 
+            foreach (var requiredSupportAssembly in new[] { "Steamworks.NET.dll", "Sentry.dll" })
+            {
+                var stagedPath = Path.Combine(publishDir, requiredSupportAssembly);
+                if (!File.Exists(stagedPath))
+                    return RuntimeAssemblyCachePreparationResult.Rejected(
+                        $"Required iOS game support assembly is missing after runtime-cache preparation: {requiredSupportAssembly}"
+                    );
+            }
+
             return RuntimeAssemblyCachePreparationResult.Success();
         }
         catch (Exception ex)

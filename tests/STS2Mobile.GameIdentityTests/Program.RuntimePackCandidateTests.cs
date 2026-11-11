@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using STS2Mobile.Launcher;
@@ -53,6 +54,27 @@ internal static partial class Program
             ).Usable,
             "A returned candidate must pass an independent read-back validation."
         );
+    }
+
+    private static void RuntimePackCandidateIncludesGameSupportAssemblies()
+    {
+        using var fixture = CreateRuntimePackFixture();
+        foreach (var assemblyName in new[] { "Steamworks.NET.dll", "Sentry.dll" })
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(fixture.SourceAssemblyPath)!, assemblyName), assemblyName);
+        var identity = PublishRuntimePackFixtureReady(fixture);
+
+        var generation = GenerateRuntimePackCandidate(fixture, identity);
+
+        True(generation.Succeeded, $"Candidate with support assemblies should succeed: {generation.Problem}");
+        foreach (var assemblyName in new[] { "Steamworks.NET.dll", "Sentry.dll" })
+        {
+            var stagedPath = Path.Combine(generation.Candidate.StagingDirectory, assemblyName);
+            True(File.Exists(stagedPath), $"Runtime pack must include {assemblyName}.");
+            True(generation.Candidate.Manifest.SupportAssemblies.Contains(assemblyName),
+                $"Runtime manifest must declare {assemblyName}.");
+            Equal(HashFileForCandidateTest(stagedPath), generation.Candidate.Manifest.SupportAssemblySha256[assemblyName],
+                $"Runtime manifest must hash {assemblyName}.");
+        }
     }
 
     private static void RuntimePackCandidateRejectsStaleIdentity()

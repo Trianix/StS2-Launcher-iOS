@@ -121,10 +121,11 @@ static BOOL STS2CopyFileAtomicallyIfChanged(NSString *sourcePath, NSString *dest
         }
     }
 
+    NSString *previousPublish = [targetPublish stringByAppendingString:@".previous"];
+
     // Recover an interrupted prior activation before preparing another complete
     // generation. A generation is activated only after every input is copied
     // and the required runtime set is present.
-    NSString *previousPublish = [targetPublish stringByAppendingString:@".previous"];
     if (![fm fileExistsAtPath:targetPublish] && [fm fileExistsAtPath:previousPublish]) {
         if (![fm moveItemAtPath:previousPublish toPath:targetPublish error:error]) return NO;
     } else if ([fm fileExistsAtPath:targetPublish] && [fm fileExistsAtPath:previousPublish]) {
@@ -134,6 +135,21 @@ static BOOL STS2CopyFileAtomicallyIfChanged(NSString *sourcePath, NSString *dest
     NSString *stagingPublish = [targetPublish stringByAppendingFormat:@".staging.%@", [[NSUUID UUID] UUIDString]];
     if (![fm createDirectoryAtPath:stagingPublish withIntermediateDirectories:YES attributes:nil error:error]) return NO;
     NSLog(@"[STS2Mobile iOS] Preparing complete assembly generation at: %@", stagingPublish);
+
+    // The native startup path can boot an installed game PCK without entering
+    // the managed launcher first. Preserve the game's support assemblies when
+    // rebuilding the publish cache so that this direct path remains loadable.
+    NSString *existingPublish = [fm fileExistsAtPath:targetPublish] ? targetPublish : previousPublish;
+    for (NSString *assemblyName in @[@"Steamworks.NET.dll", @"Sentry.dll"]) {
+        NSString *sourcePath = [existingPublish stringByAppendingPathComponent:assemblyName];
+        if ([fm fileExistsAtPath:sourcePath]) {
+            NSString *destinationPath = [stagingPublish stringByAppendingPathComponent:assemblyName];
+            if (!STS2CopyFileAtomicallyIfChanged(sourcePath, destinationPath, error)) {
+                [fm removeItemAtPath:stagingPublish error:nil];
+                return NO;
+            }
+        }
+    }
     for (NSString *file in bclFiles) {
         // sts2.dll in dotnet_bcl is a metadata-only compile reference. Resolve
         // the active runtime assembly below, preserving the validated promoted

@@ -355,6 +355,16 @@ extern "C" bool sts2_ios_is_jit_ready(int *r_pid, int *r_traced, int *r_cs_debug
 
 static NSArray *sActiveGodotCmdline = nil;
 
+static BOOL sts2_hasGameSupportAssemblies(NSString *userData) {
+    NSString *publishDir = [userData stringByAppendingPathComponent:@".godot/mono/publish/arm64"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in @[@"Steamworks.NET.dll", @"Sentry.dll"]) {
+        if (![fm fileExistsAtPath:[publishDir stringByAppendingPathComponent:name]])
+            return NO;
+    }
+    return YES;
+}
+
 static NSArray *sts2_determine_active_godot_cmdline() {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -400,12 +410,16 @@ static NSArray *sts2_determine_active_godot_cmdline() {
                 [fm removeItemAtPath:launchMarkerPath error:nil];
                 
                 if (pckPath && [fm fileExistsAtPath:pckPath]) {
-                    NSLog(@"[STS2Launcher iOS] Bootstrapping game from pending launch marker: %@", pckPath);
-                    setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
-                    setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
-                    setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
-                    sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
-                    return;
+                    if (!sts2_hasGameSupportAssemblies(userData)) {
+                        NSLog(@"[STS2Launcher iOS] Required game support assemblies are missing; refusing direct game boot and opening launcher.");
+                    } else {
+                        NSLog(@"[STS2Launcher iOS] Bootstrapping game from pending launch marker: %@", pckPath);
+                        setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+                        setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+                        setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
+                        sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
+                        return;
+                    }
                 } else {
                     NSLog(@"[STS2Launcher iOS] Pending launch PCK missing or invalid: %@; falling back to launcher", pckPath);
                 }
@@ -423,12 +437,16 @@ static NSArray *sts2_determine_active_godot_cmdline() {
                 if (slotDict && [slotDict[@"playable"] boolValue]) {
                     NSString *pckPath = slotDict[@"pckPath"];
                     if (pckPath && [fm fileExistsAtPath:pckPath]) {
-                        NSLog(@"[STS2Launcher iOS] Found authorized runtime slot PCK at: %@; booting game directly.", pckPath);
-                        setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
-                        setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
-                        setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
-                        sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
-                        return;
+                        if (!sts2_hasGameSupportAssemblies(userData)) {
+                            NSLog(@"[STS2Launcher iOS] Required game support assemblies are missing; opening launcher instead of direct boot.");
+                        } else {
+                            NSLog(@"[STS2Launcher iOS] Found authorized runtime slot PCK at: %@; booting game directly.", pckPath);
+                            setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+                            setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+                            setenv("STS2_ACTIVE_PCK_PATH", [pckPath UTF8String], 1);
+                            sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", pckPath ];
+                            return;
+                        }
                     }
                 }
             }
@@ -451,12 +469,16 @@ static NSArray *sts2_determine_active_godot_cmdline() {
         }
         
         if ([fm fileExistsAtPath:installedGamePck]) {
-            NSLog(@"[STS2Launcher iOS] Found installed game PCK at: %@; booting game directly.", installedGamePck);
-            setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
-            setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
-            setenv("STS2_ACTIVE_PCK_PATH", [installedGamePck UTF8String], 1);
-            sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", installedGamePck ];
-            return;
+            if (!sts2_hasGameSupportAssemblies(userData)) {
+                NSLog(@"[STS2Launcher iOS] Installed game PCK found but Steamworks.NET.dll or Sentry.dll is missing; opening launcher for runtime preparation.");
+            } else {
+                NSLog(@"[STS2Launcher iOS] Found installed game PCK at: %@; booting game directly.", installedGamePck);
+                setenv("STS2_LAUNCHER_BOOTSTRAP", "0", 1);
+                setenv("STS2_AUTO_LAUNCH_GAME", "1", 1);
+                setenv("STS2_ACTIVE_PCK_PATH", [installedGamePck UTF8String], 1);
+                sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", installedGamePck ];
+                return;
+            }
         }
         
         NSString *bundlePath = [[NSBundle mainBundle] bundlePath];

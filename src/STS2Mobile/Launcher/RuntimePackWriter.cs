@@ -94,6 +94,8 @@ internal static partial class RuntimePackWriter
 
     private static readonly string[] RuntimeSupportAssemblyFileNames =
     {
+        "Steamworks.NET.dll",
+        "Sentry.dll",
     };
     private static string CreateStagingDirectory(string finalPackDirectory, Guid installTransactionId, Guid attemptId)
     {

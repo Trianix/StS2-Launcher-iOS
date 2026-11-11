@@ -165,6 +165,7 @@ internal static partial class Program
             ("branch lifecycle restart after install ready", BranchLifecycleRestartAfterInstallReady),
             ("branch lifecycle update preserves other branch", BranchLifecyclePreservesOtherBranch),
             ("runtime pack candidate generation", RuntimePackCandidateGeneration),
+            ("runtime pack candidate includes game support assemblies", RuntimePackCandidateIncludesGameSupportAssemblies),
             ("runtime pack candidate rejects stale identity", RuntimePackCandidateRejectsStaleIdentity),
             ("runtime pack candidate rejects changing source", RuntimePackCandidateRejectsChangingSource),
             ("runtime pack candidate rejects declared source hashes", RuntimePackCandidateRejectsDeclaredSourceHashes),

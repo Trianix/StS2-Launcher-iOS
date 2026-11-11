@@ -21,6 +21,7 @@ internal static class SceneBindingPatches
             "MegaCrit.Sts2.Core.Nodes.NGame",
             "MegaCrit.Sts2.Core.Nodes.NRun",
             "MegaCrit.Sts2.Core.Nodes.CommonUi.NGlobalUi",
+            "MegaCrit.Sts2.Core.Nodes.CommonUi.NTopBar",
             "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu",
             "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NSingleplayerSubmenu",
             "MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NCharacterSelectScreen",

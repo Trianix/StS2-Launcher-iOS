@@ -184,14 +184,17 @@ internal static class GameplayPropertyProbe
             {
                 Check(label + ":custom-export-read", () =>
                 {
-                    var value = custom.Get("probe_exported_vector");
+                    // Godot's C# source generator exposes exported C# members
+                    // under their CLR property name by default (PascalCase).
+                    // GDScript-style snake_case is not the generic property key.
+                    var value = custom.Get(nameof(GameplayProbeControl.ProbeExportedVector));
                     Require(value.VariantType == Variant.Type.Vector2 && value.AsVector2().IsEqualApprox(custom.ProbeExportedVector),
                         $"Exported property read mismatch: generic={Describe(value)}, typed={custom.ProbeExportedVector}.");
                 });
                 Check(label + ":custom-export-write", () =>
                 {
                     var expected = new Vector2(91, 37);
-                    custom.Set("probe_exported_vector", expected);
+                    custom.Set(nameof(GameplayProbeControl.ProbeExportedVector), expected);
                     Require(custom.ProbeExportedVector.IsEqualApprox(expected),
                         $"Exported property write mismatch: expected={expected}, typed-after={custom.ProbeExportedVector}.");
                 });

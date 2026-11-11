@@ -13,10 +13,12 @@ internal sealed class SteamWorkshopSyncStateStore
     };
 
     private readonly string _manifestPath;
+    private readonly Func<string, string> _readManifest;
 
-    internal SteamWorkshopSyncStateStore(string manifestPath)
+    internal SteamWorkshopSyncStateStore(string manifestPath, Func<string, string> readManifest = null)
     {
         _manifestPath = manifestPath;
+        _readManifest = readManifest ?? File.ReadAllText;
     }
 
     internal SteamWorkshopSyncManifest Load(string downloadsDirectory, string stagedDirectory)
@@ -24,7 +26,7 @@ internal sealed class SteamWorkshopSyncStateStore
         SteamWorkshopSyncManifest manifest = null;
         try
         {
-            var json = File.ReadAllText(_manifestPath);
+            var json = _readManifest(_manifestPath);
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object

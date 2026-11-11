@@ -24,7 +24,8 @@ internal sealed class SteamWorkshopStager
     internal SteamWorkshopStager(
         string downloadsDirectory,
         string stagedDirectory,
-        string manifestPath
+        string manifestPath,
+        Func<string, string> readManifest = null
     )
     {
         _downloadsDirectory = Path.GetFullPath(downloadsDirectory);
@@ -33,7 +34,7 @@ internal sealed class SteamWorkshopStager
             Path.GetDirectoryName(Path.GetFullPath(manifestPath)) ?? _stagedDirectory,
             Path.GetFileName(AppPaths.WorkshopClearMarkerPath(""))
         );
-        _stateStore = new SteamWorkshopSyncStateStore(manifestPath);
+        _stateStore = new SteamWorkshopSyncStateStore(manifestPath, readManifest);
     }
 
     internal SteamWorkshopSyncManifest Stage(

@@ -36,10 +36,11 @@ internal static partial class Program
         using var fixture = new WorkshopRecoveryFixture();
         var installed = fixture.Seed(fixture.Item(42, "committed")).Items.Single().Installed;
         var original = File.ReadAllText(fixture.ManifestPath);
-        // Deny reads while permitting replacement, reproducing the dangerous
-        // distinction between an unreadable inventory and a failed save.
-        using (var locked = new FileStream(fixture.ManifestPath, FileMode.Open, FileAccess.Read, FileShare.Delete))
-            WorkshopInventoryMustFail(() => fixture.Stager.CleanupBeforeFirstLoad());
+        // Inject a deterministic read failure. FileShare behavior differs by OS,
+        // so an open handle cannot reliably simulate an unreadable file in CI.
+        fixture.DenyManifestReads = true;
+        WorkshopInventoryMustFail(() => fixture.Stager.CleanupBeforeFirstLoad());
+        fixture.DenyManifestReads = false;
         Equal(original, File.ReadAllText(fixture.ManifestPath), "A read failure must not publish an empty replacement.");
         Equal("committed", File.ReadAllText(Path.Combine(installed.Directory, "mod.dll")), "A read failure cannot authorize deletion of installed files.");
     }
@@ -111,12 +112,14 @@ internal static partial class Program
         internal string Downloads { get; }
         internal string ManifestPath { get; }
         internal SteamWorkshopStager Stager { get; }
+        internal bool DenyManifestReads { get; set; }
         internal WorkshopRecoveryFixture()
         {
             Downloads = Path.Combine(_root, "downloads");
             ManifestPath = Path.Combine(_root, "workshop.json");
             Directory.CreateDirectory(Downloads);
-            Stager = new SteamWorkshopStager(Downloads, Path.Combine(_root, "staged"), ManifestPath);
+            Stager = new SteamWorkshopStager(Downloads, Path.Combine(_root, "staged"), ManifestPath,
+                path => DenyManifestReads ? throw new IOException("Injected manifest read failure") : File.ReadAllText(path));
         }
         internal string Source(ulong id) => Path.Combine(Downloads, id.ToString());
         internal SteamWorkshopItem Item(ulong id, string content, params ulong[] required)

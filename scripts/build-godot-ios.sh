@@ -49,5 +49,12 @@ if [ -z "$BUILT_LIB" ] || [ ! -f "$BUILT_LIB" ]; then
 fi
 
 cp "$BUILT_LIB" "$IOS_LIBS/libgodot.ios.template_release.arm64.a"
-python3 "$ROOT/scripts/ios-native-fingerprint.py" record godot "$IOS_LIBS/libgodot.ios.template_release.arm64.a"
+STAGED_LIB="$IOS_LIBS/libgodot.ios.template_release.arm64.a"
+# Normalize the archive as part of the fingerprinted build recipe. Packaging
+# must never mutate a library after its source/toolchain fingerprint is saved.
+if ar -t "$STAGED_LIB" | grep -Fxq 'pcre2_chkdint_16.ios.template_release.arm64.o'; then
+    ar -d "$STAGED_LIB" pcre2_chkdint_16.ios.template_release.arm64.o
+    ranlib "$STAGED_LIB"
+fi
+python3 "$ROOT/scripts/ios-native-fingerprint.py" record godot "$STAGED_LIB"
 echo "Staged Godot iOS library at $IOS_LIBS/libgodot.ios.template_release.arm64.a"

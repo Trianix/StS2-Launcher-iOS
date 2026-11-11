@@ -37,6 +37,17 @@ public static partial class ModEntry
         try
         {
             ConfigureWritableTempDirectory();
+            if (OperatingSystem.IsIOS()
+                && string.Equals(
+                    System.Environment.GetEnvironmentVariable("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY"),
+                    "1",
+                    StringComparison.Ordinal))
+            {
+                PatchHelper.Log("iOS property-probe mode requested; skipping game patches and launcher startup.");
+                ScheduleStandalonePropertyProbe();
+                return;
+            }
+
             var launcherBootstrapRequested = IsLauncherBootstrapRequested();
             if (launcherBootstrapRequested)
             {
@@ -100,6 +111,50 @@ public static partial class ModEntry
             "1",
             StringComparison.Ordinal
         );
+
+    private static void ScheduleStandalonePropertyProbe()
+    {
+        Godot.Callable.From(() =>
+        {
+            try
+            {
+                if (Godot.Engine.GetMainLoop() is not Godot.SceneTree tree)
+                    throw new InvalidOperationException("Godot SceneTree is unavailable for the property probe.");
+
+                var host = new Godot.Control { Name = "STS2GameplayPropertyProbeHost" };
+                host.SetAnchorsPreset(Godot.Control.LayoutPreset.FullRect);
+                tree.Root.AddChild(host);
+                STS2Mobile.Diagnostics.GameplayDiagnostics.InitializeStandalonePropertyProbe(host);
+                _ = RunStandalonePropertyProbeAsync(host);
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[GameplayProbe] Standalone iOS probe could not start: {ex}");
+            }
+        }).CallDeferred();
+    }
+
+    private static async System.Threading.Tasks.Task RunStandalonePropertyProbeAsync(Godot.Node host)
+    {
+        try
+        {
+            await STS2Mobile.Diagnostics.GameplayPropertyProbe.RunAsync(host);
+            STS2Mobile.Diagnostics.ExceptionSelfTest.RunStandaloneNativeCallbackProbe(
+                (name, status, detail) =>
+                {
+                    if (status == "failed")
+                        STS2Mobile.Diagnostics.GameplayDiagnostics.Failure(name, new InvalidOperationException(detail));
+                    else
+                        STS2Mobile.Diagnostics.GameplayDiagnostics.Result(name, status, detail);
+                });
+            STS2Mobile.Diagnostics.GameplayDiagnostics.CompleteStandalonePropertyProbe();
+        }
+        catch (Exception ex)
+        {
+            STS2Mobile.Diagnostics.GameplayDiagnostics.Failure("standalone-property-probe", ex, host);
+            STS2Mobile.Diagnostics.GameplayDiagnostics.CompleteStandalonePropertyProbe();
+        }
+    }
 
     private static bool TryBeginApply()
     {

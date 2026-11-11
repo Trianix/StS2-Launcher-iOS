@@ -87,6 +87,46 @@ public static class ExceptionSelfTest
     [DllImport("__Internal", EntryPoint = "sts2_test_native_callback_roundtrip")]
     private static extern int NativeCallbackRoundtrip(NativeCallbackDelegate fn, int val);
 
+    internal static void RunStandaloneNativeCallbackProbe(Action<string, string, string> record)
+    {
+        if (!OperatingSystem.IsIOS())
+        {
+            record("native-callback", "blocked", "The native callback bridge is available only in the iOS host.");
+            return;
+        }
+
+        try
+        {
+            NativeCallbackDelegate callback = value => value * 2;
+            var first = NativeCallbackRoundtrip(callback, 21);
+            if (first != 42) throw new InvalidOperationException($"Callback returned {first}; expected 42.");
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var afterCollection = NativeCallbackRoundtrip(callback, 19);
+            if (afterCollection != 38) throw new InvalidOperationException($"Callback after collection returned {afterCollection}; expected 38.");
+
+            NativeCallbackDelegate catchingCallback = value =>
+            {
+                try { throw new InvalidOperationException("Contained callback exception."); }
+                catch (InvalidOperationException) { return value + 1; }
+            };
+            var caught = NativeCallbackRoundtrip(catchingCallback, 40);
+            if (caught != 41) throw new InvalidOperationException($"Exception-catching callback returned {caught}; expected 41.");
+
+            record("native-callback", "passed", "Native-to-managed callbacks survived roundtrip, repeated GC and an internally caught exception.");
+        }
+        catch (EntryPointNotFoundException ex)
+        {
+            record("native-callback", "failed", "The iOS native callback export is missing: " + ex.Message);
+        }
+        catch (Exception ex)
+        {
+            record("native-callback", "failed", ex.ToString());
+        }
+    }
+
     public static void Run(Harmony harmony)
     {
         Log("[ExceptionSelfTest] ========================================================");

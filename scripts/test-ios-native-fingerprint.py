@@ -44,6 +44,11 @@ class NativeFingerprintTests(unittest.TestCase):
         managed.write_text("managed fix")
         self.assertEqual(first, module.fingerprint("godot"))
 
+    def test_mono_runtime_manifest_changes_invalidate_native_reuse(self):
+        first = module.fingerprint("mono")
+        (self.root / "patches/mono/runtime.json").write_text("updated pinned runtime recipe")
+        self.assertNotEqual(first, module.fingerprint("mono"))
+
     def test_record_rejects_changed_or_unfingerprinted_library(self):
         library = self.root / "libgodot.a"
         library.write_bytes(b"native archive")

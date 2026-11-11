@@ -361,6 +361,32 @@ static NSArray *sts2_determine_active_godot_cmdline() {
         NSString *userData = [IOSAssemblyBootstrapper userDataDirectory];
         NSString *launchMarkerPath = [userData stringByAppendingPathComponent:@"pending_game_launch.json"];
         NSFileManager *fm = [NSFileManager defaultManager];
+
+        NSArray *documentPaths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *documents = documentPaths.firstObject;
+        NSString *probeMarker = [documents stringByAppendingPathComponent:@"gameplay-property-probe.enabled"];
+        if (documents && [fm fileExistsAtPath:probeMarker]) {
+            NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+            NSString *bootstrapPath = [[NSBundle mainBundle] pathForResource:@"bootstrap" ofType:@"pck"];
+            if (!bootstrapPath || ![fm fileExistsAtPath:bootstrapPath]) {
+                bootstrapPath = [bundlePath stringByAppendingPathComponent:@"bootstrap.pck"];
+            }
+            if (!bootstrapPath || ![fm fileExistsAtPath:bootstrapPath]) {
+                bootstrapPath = [bundlePath stringByAppendingPathComponent:@"STS2Launcher.pck"];
+            }
+            if (![fm fileExistsAtPath:bootstrapPath]) {
+                NSLog(@"[STS2Launcher iOS] Property-probe marker found, but bootstrap PCK is missing: %@", bootstrapPath);
+                unsetenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY");
+            } else {
+                NSLog(@"[STS2Launcher iOS] Running one-shot standalone property probe from %@", bootstrapPath);
+                setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 1);
+                setenv("STS2_AUTO_LAUNCH_GAME", "0", 1);
+                setenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY", "1", 1);
+                sActiveGodotCmdline = @[ @"--verbose", @"--main-pack", bootstrapPath ];
+                return;
+            }
+        }
+        unsetenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY");
         
         // 1. Check for pending game launch marker written by standalone launcher
         if ([fm fileExistsAtPath:launchMarkerPath]) {

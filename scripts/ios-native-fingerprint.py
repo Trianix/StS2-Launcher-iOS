@@ -14,6 +14,8 @@ def fingerprint(kind):
     inputs += sorted((ROOT / "patches" / ("godot" if kind == "godot" else "mono")).rglob("*"))
     if kind == "godot":
         inputs += [ROOT / "scripts/setup-godot-source.sh", ROOT / "scripts/godot-source-utils.sh", ROOT / "scripts/requirements-godot-build.txt"]
+    else:
+        inputs += [ROOT / "patches/mono/runtime.json"]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs if p.is_file()}
     tools = {}
     for tool in (["xcodebuild", "-version"], ["xcrun", "--sdk", "iphoneos", "--show-sdk-version"]):

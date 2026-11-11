@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
 using STS2Mobile.Patches;
 using STS2Mobile.Steam;
 
@@ -84,8 +85,8 @@ internal sealed class RuntimeAssemblyCachePreparer : IRuntimeAssemblyCachePrepar
             {
                 var fileName = Path.GetFileName(file);
                 var destFile = Path.Combine(publishDir, fileName);
-                File.Copy(file, destFile, overwrite: true);
-                PatchHelper.Log($"[Launcher iOS] Staged runtime-pack assembly: {fileName}");
+                if (CopyAssemblyAtomicallyIfChanged(file, destFile))
+                    PatchHelper.Log($"[Launcher iOS] Staged runtime-pack assembly: {fileName}");
             }
 
             // Also copy support assemblies from gameDirectory if present (e.g. Steamworks.NET.dll, Sentry.dll)
@@ -101,11 +102,8 @@ internal sealed class RuntimeAssemblyCachePreparer : IRuntimeAssemblyCachePrepar
                         continue;
 
                     var destFile = Path.Combine(publishDir, fileName);
-                    if (!File.Exists(destFile))
-                    {
-                        File.Copy(file, destFile, overwrite: false);
+                    if (CopyAssemblyAtomicallyIfChanged(file, destFile))
                         PatchHelper.Log($"[Launcher iOS] Staged game support assembly: {fileName}");
-                    }
                 }
             }
 
@@ -116,6 +114,38 @@ internal sealed class RuntimeAssemblyCachePreparer : IRuntimeAssemblyCachePrepar
             var problem = $"iOS assembly-cache preparation failed: {ex.GetBaseException().Message}";
             PatchHelper.Log($"[Launcher] {problem}");
             return RuntimeAssemblyCachePreparationResult.Rejected(problem);
+        }
+    }
+
+    private static bool CopyAssemblyAtomicallyIfChanged(string sourcePath, string destinationPath)
+    {
+        byte[] sourceHash;
+        using (var source = File.OpenRead(sourcePath))
+            sourceHash = SHA256.HashData(source);
+
+        if (File.Exists(destinationPath))
+        {
+            using var destination = File.OpenRead(destinationPath);
+            if (CryptographicOperations.FixedTimeEquals(sourceHash, SHA256.HashData(destination)))
+                return false;
+        }
+
+        var temporaryPath = destinationPath + ".staging." + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.Copy(sourcePath, temporaryPath, overwrite: false);
+            using (var staged = File.OpenRead(temporaryPath))
+            {
+                if (!CryptographicOperations.FixedTimeEquals(sourceHash, SHA256.HashData(staged)))
+                    throw new IOException($"Assembly changed while it was staged: {sourcePath}");
+            }
+
+            File.Move(temporaryPath, destinationPath, overwrite: true);
+            return true;
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
         }
     }
 }

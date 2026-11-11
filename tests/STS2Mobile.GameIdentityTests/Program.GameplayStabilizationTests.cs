@@ -47,6 +47,18 @@ internal static partial class Program
         True(report.Errors[0].FirstStack.Contains("123"), "First complete failure is preserved.");
     }
 
+    private static void GameplayReportReportsMonoMode()
+    {
+        Equal("interpreter-requested", GameplayPropertyProbe.DescribeMonoMode("iOS", null, "1"),
+            "An explicit interpreter request is identified.");
+        Equal("jit-requested", GameplayPropertyProbe.DescribeMonoMode("iOS", "1", null),
+            "An explicit JIT request is identified.");
+        Equal("ios-mode-unreported", GameplayPropertyProbe.DescribeMonoMode("iOS", null, null),
+            "iOS without a mode marker is not misreported as JIT.");
+        Equal("runtime-default-or-unknown", GameplayPropertyProbe.DescribeMonoMode("Android", null, null),
+            "Android execution mode is left unknown unless explicitly marked.");
+    }
+
     private static void GameplayReportDoesNotPromoteBlockedSteps()
     {
         var report = new GameplayDiagnosticReport();

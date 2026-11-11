@@ -41,7 +41,9 @@ jobs:
         shell: pwsh
         run: ./scripts/test-local-gameplay-save-safety.ps1
       - name: Verify native cache invalidation
-        run: python3 scripts/test-ios-native-fingerprint.py
+        run: |
+          python3 scripts/test-ios-native-fingerprint.py
+          python3 scripts/test-write-ios-runtime-manifest.py
       - name: Install pinned desktop Godot for behavior checks
         run: |
           curl -fSL --retry 3 https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable/Godot_v4.5.1-stable_mono_linux_x86_64.zip -o tmp/godot-mono.zip

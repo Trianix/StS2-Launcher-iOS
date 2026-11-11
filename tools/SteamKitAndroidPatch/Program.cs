@@ -941,19 +941,19 @@ static void PatchMonoModForIos(string monoModPath)
     var detourBaseType = factoryType.NestedTypes.FirstOrDefault(t => t.Name == "DetourBase")
         ?? throw new InvalidOperationException("Could not find PlatformTripleDetourFactory/DetourBase");
 
-    var interpDetourPInvoke = detourType.Methods.FirstOrDefault(m => m.Name == "sts2_ios_interp_detour_method");
+    var interpDetourPInvoke = detourType.Methods.FirstOrDefault(m => m.Name == "sts2_ios_interp_detour_method_v1");
     if (interpDetourPInvoke == null)
     {
         interpDetourPInvoke = new MethodDefinition(
-            "sts2_ios_interp_detour_method",
+            "sts2_ios_interp_detour_method_v1",
             MethodAttributes.Private | MethodAttributes.Static | MethodAttributes.HideBySig | MethodAttributes.PInvokeImpl,
-            monoMod.TypeSystem.Void);
+            monoMod.TypeSystem.Int32);
         interpDetourPInvoke.ImplAttributes |= MethodImplAttributes.PreserveSig;
         interpDetourPInvoke.Parameters.Add(new ParameterDefinition("srcMethod", ParameterAttributes.None, monoMod.TypeSystem.IntPtr));
         interpDetourPInvoke.Parameters.Add(new ParameterDefinition("dstMethod", ParameterAttributes.None, monoMod.TypeSystem.IntPtr));
         interpDetourPInvoke.PInvokeInfo = new PInvokeInfo(
             PInvokeAttributes.NoMangle | PInvokeAttributes.CallConvCdecl,
-            "sts2_ios_interp_detour_method",
+            "sts2_ios_interp_detour_method_v1",
             internalModule);
         detourType.Methods.Add(interpDetourPInvoke);
     }
@@ -1033,11 +1033,18 @@ static void PatchMonoModForIos(string monoModPath)
     cil.Append(cil.Create(OpCodes.Call, getValueRef));
     cil.Append(cil.Create(OpCodes.Stloc_1));
 
-    // sts2_ios_interp_detour_method(loc.0, loc.1); return null;
+    // Fail MonoMod patch creation when the native interpreter rewrite rejects a method.
+    // The versioned native API returns 1 only after the replacement body is installed.
     cil.Append(cil.Create(OpCodes.Ldloc_0));
     cil.Append(cil.Create(OpCodes.Ldloc_1));
     cil.Append(cil.Create(OpCodes.Call, interpDetourPInvoke));
-    cil.Append(cil.Create(OpCodes.Ldnull));
+    var detourSucceeded = cil.Create(OpCodes.Ldnull);
+    cil.Append(cil.Create(OpCodes.Ldc_I4_1));
+    cil.Append(cil.Create(OpCodes.Beq_S, detourSucceeded));
+    cil.Append(cil.Create(OpCodes.Ldstr, "iOS interpreter detour v1 rejected the method; see the native log for its status."));
+    cil.Append(cil.Create(OpCodes.Newobj, monoMod.ImportReference(typeof(InvalidOperationException).GetConstructor(new[] { typeof(string) })!)));
+    cil.Append(cil.Create(OpCodes.Throw));
+    cil.Append(detourSucceeded);
     cil.Append(cil.Create(OpCodes.Ret));
 
     Console.WriteLine("Patched PlatformTripleDetourFactory/Detour::CreateDetour -> sts2_ios_interp_detour_method");

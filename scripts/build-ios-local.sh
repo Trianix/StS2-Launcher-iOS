@@ -21,6 +21,7 @@ IOS_BUNDLE_BCL_DIR="$IOS_DIR/STS2Launcher/dotnet_bcl"
 IOS_FRAMEWORKS_DIR="$IOS_DIR/STS2Launcher/Frameworks"
 
 mkdir -p "$UPSTREAM_PUBLISH_DIR" "$DEPS_CACHE_DIR" "$IOS_BCL_ASSETS_DIR" "$IOS_BUNDLE_BCL_DIR" "$IOS_FRAMEWORKS_DIR"
+rm -f "$IOS_BCL_ASSETS_DIR/"*.dll
 
 if [ ! -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" ] && [ -f "$IOS_DIR/refs/sts2.dll.gz" ]; then
     echo "Decompressing metadata-only reference assembly sts2.dll..."
@@ -189,12 +190,9 @@ cp -R "$SPINE_EXTRACT_DIR/bin/ios/libspine_godot.ios.template_release.framework"
 
 # 1. Build Managed Assembly
 echo "Publishing STS2Mobile managed assembly..."
-dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release -p:SourceRevisionId="$BUILD_REVISION"
-
-MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0/publish"
-if [ ! -d "$MANAGED_PUBLISH" ]; then
-    MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0"
-fi
+MANAGED_PUBLISH="$ROOT/tmp/ios-managed-publish"
+rm -rf "$MANAGED_PUBLISH"
+dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release -o "$MANAGED_PUBLISH" -p:SourceRevisionId="$BUILD_REVISION"
 
 echo "Patching SteamKit2 for iOS..."
 dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-ios "$MANAGED_PUBLISH/SteamKit2.dll"
@@ -213,6 +211,7 @@ cp -f "$IOS_DIR/STS2Launcher/bootstrap.pck" "$IOS_DIR/STS2Launcher/STS2Launcher.
 
 # 3. Stage Managed Assemblies into App Bundle Resources
 ASSEMBLIES_DIR="$IOS_DIR/STS2Launcher/assemblies"
+rm -rf "$ASSEMBLIES_DIR"
 mkdir -p "$ASSEMBLIES_DIR"
 
 cp -f "$MANAGED_PUBLISH/STS2Mobile.dll" "$ASSEMBLIES_DIR/"
@@ -239,15 +238,11 @@ if [ -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" ]; then
     cp -f "$UPSTREAM_PUBLISH_DIR/sts2.dll" "$IOS_BUNDLE_BCL_DIR/sts2.dll"
 fi
 rm -f "$ASSEMBLIES_DIR/sts2.dll"
+python3 "$ROOT/scripts/write-ios-runtime-manifest.py" "$ROOT" "$IOS_BUNDLE_BCL_DIR" "$ASSEMBLIES_DIR" "$IOS_DIR/STS2Launcher/bootstrap.pck"
 
 # 4. Build with Xcode
 mkdir -p "$ARTIFACTS_DIR"
 IPA_PATH="$ARTIFACTS_DIR/STS2Launcher-$VERSION_NAME.ipa"
-
-if [ -f "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" ]; then
-    ar -d "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" pcre2_chkdint_16.ios.template_release.arm64.o 2>/dev/null || true
-    ranlib "$IOS_DIR/libs/libgodot.ios.template_release.arm64.a" 2>/dev/null || true
-fi
 
 echo "Running xcodebuild..."
 xcodebuild build \

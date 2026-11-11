@@ -27,6 +27,7 @@ internal static partial class Program
             ("gameplay stabilization: transition does not retry", GameplayTransitionDoesNotRetry),
             ("gameplay stabilization: cleanup preserves failure", GameplayTransitionRetainsCleanupFailure),
             ("gameplay stabilization: errors retain phase", GameplayReportGroupsErrorsByPhase),
+            ("gameplay stabilization: reports Mono execution mode", GameplayReportReportsMonoMode),
             ("gameplay stabilization: blocked steps remain blocked", GameplayReportDoesNotPromoteBlockedSteps),
             ("gameplay stabilization: test saves stay isolated", GameplaySessionRejectsEscapingPaths),
             ("gameplay stabilization: scene references reject ambiguity", SceneBindingRejectsAmbiguousCandidates),

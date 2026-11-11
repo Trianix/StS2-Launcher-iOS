@@ -14,6 +14,7 @@ namespace STS2Mobile.Diagnostics;
 internal static class GameplayDiagnostics
 {
     internal const string ReportName = "last_gameplay_diagnostics.json";
+    internal const string StandaloneProbeMarkerName = "gameplay-property-probe.enabled";
     private static readonly object Gate = new();
     private static readonly GameplayDiagnosticReport Report = new();
     private static string _directory;
@@ -44,13 +45,71 @@ internal static class GameplayDiagnostics
             patchSha256 = Hash(patchAssembly), gameSha256 = Hash(typeof(NGame).Assembly),
             godotSharpSha256 = Hash(typeof(Node).Assembly), godot = Engine.GetVersionInfo()["string"].AsString(),
             runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            monoModeRequested = GameplayPropertyProbe.DescribeMonoMode(
+                OS.GetName(),
+                System.Environment.GetEnvironmentVariable("STS2_MONO_JIT"),
+                System.Environment.GetEnvironmentVariable("STS2_MONO_FORCE_INTERP")),
+            monoModeEvidence = "Requested mode only; confirm the active mode from the native Godot startup line in app_output.log.",
+            monoModeNativeConfirmed = "unknown; the managed probe does not independently query Mono execution internals",
             os = OS.GetName(), model = OS.GetModelName(), renderer = RenderingServer.GetCurrentRenderingMethod(),
             pckSha256 = validation.SelectedPckSha256, identity = validation.GameIdentityId,
             runtimePack = validation.RuntimePackId, isolatedSaveDirectory = GameplayTestSession.SaveDirectory,
+            runtimeProvenance = ReadRuntimeProvenance(),
         };
         if (ProbeEnabled) CaptureDailyRunInitializer(typeof(NGame).Assembly);
         game.TreeExiting += () => { lock (Gate) { Report.Phase = "shutdown"; Persist(); } };
         Checkpoint("game:enter-tree", game);
+    }
+
+    internal static void InitializeStandalonePropertyProbe(Node host)
+    {
+        if (_directory != null) throw new InvalidOperationException("Gameplay diagnostics were already initialized.");
+
+        var data = LauncherDiagnostics.DiagnosticDataDir;
+        var documents = OperatingSystem.IsIOS() ? IOSGodotAppBridge.GetDocumentsDir() : data;
+        _directory = string.IsNullOrWhiteSpace(documents) ? data : documents;
+        ProbeEnabled = true;
+        var patchAssembly = typeof(GameplayDiagnostics).Assembly;
+        _identity = new
+        {
+            utc = DateTime.UtcNow,
+            build = patchAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+            patchSha256 = Hash(patchAssembly),
+            gameSha256 = Hash(typeof(NGame).Assembly),
+            godotSharpSha256 = Hash(typeof(Node).Assembly),
+            godot = Engine.GetVersionInfo()["string"].AsString(),
+            runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            monoModeRequested = GameplayPropertyProbe.DescribeMonoMode(
+                OS.GetName(),
+                System.Environment.GetEnvironmentVariable("STS2_MONO_JIT"),
+                System.Environment.GetEnvironmentVariable("STS2_MONO_FORCE_INTERP")),
+            monoModeEvidence = "Requested mode only; confirm the active mode from the native Godot startup line in app_output.log.",
+            monoModeNativeConfirmed = "unknown; the managed probe does not independently query Mono execution internals",
+            os = OS.GetName(),
+            model = OS.GetModelName(),
+            renderer = RenderingServer.GetCurrentRenderingMethod(),
+            probeMode = "standalone-property-probe",
+            isolatedSaveDirectory = (string)null,
+            runtimeProvenance = ReadRuntimeProvenance(),
+        };
+
+        host.TreeExiting += () => { lock (Gate) { Report.Phase = "shutdown"; Persist(); } };
+        Checkpoint("standalone-probe:boot", host);
+        Result("standalone-probe", "observed", "Game patch orchestration, launcher startup, save construction and Cloud synchronization were skipped.");
+    }
+
+    internal static void CompleteStandalonePropertyProbe()
+    {
+        var failures = ErrorOccurrences;
+        Result("standalone-probe:complete", failures == 0 ? "passed" : "failed",
+            $"Property and tween probe completed with {failures} grouped error(s). Scene-loaded gameplay cases require the game PCK and are reported individually.");
+
+        try
+        {
+            var marker = Path.Combine(IOSGodotAppBridge.GetDocumentsDir(), StandaloneProbeMarkerName);
+            if (File.Exists(marker)) File.Delete(marker);
+        }
+        catch (Exception ex) { BootstrapTrace.Log("Could not remove one-shot property-probe marker: " + ex.Message); }
     }
 
     internal static void Checkpoint(string stage, Node node)
@@ -152,6 +211,20 @@ internal static class GameplayDiagnostics
             catch (Exception) { }
         }
         return "unavailable:no-matching-loaded-module";
+    }
+
+    private static object ReadRuntimeProvenance()
+    {
+        var path = Path.Combine(AppPaths.AppPrivateDataDir, ".godot", "mono", "publish", "arm64", "runtime-provenance.json");
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.Clone();
+        }
+        catch (Exception ex)
+        {
+            return new { status = "unavailable", detail = ex.GetType().Name + ": " + ex.Message };
+        }
     }
 
     private static void CaptureDailyRunInitializer(Assembly assembly)

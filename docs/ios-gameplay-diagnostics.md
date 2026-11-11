@@ -21,11 +21,13 @@ python scripts/test-ios-native-fingerprint.py
 
 Supply `-BaseGamePckPath <matching-game.pck>` to include scene-loaded controls. With no PCK, those cases explicitly report `blocked`. The runner stages the executable game DLL only in its generated test output and restores the compile reference afterwards. It writes `artifacts/gameplay-stabilization/engine.log`, `godot.log` and `last_gameplay_diagnostics.json`. A process timeout or failed behavior assertion fails the command.
 
-The desktop baseline on this checkout passed 230 managed tests, 13 save/synchronization scenarios, 3 native-cache tests and 59 Godot-hosted behavior cases. The two scene-loaded cases were blocked because no gameplay PCK was supplied. This establishes desktop contracts; the iOS bridge, actual room fixtures and full gameplay route still require device evidence.
+The current local verification passes 232 managed tests, 4 native-cache tests and 1 runtime-manifest test. A fresh desktop Godot rerun was blocked during NuGet restore in this restricted environment, and no new iPhone run has been performed. The iOS bridge, actual room fixtures and full gameplay route still require device evidence.
 
 ## One device session with broad coverage
 
 The app writes `last_gameplay_diagnostics.json` in its Documents directory. It includes build/module hashes, the selected PCK/runtime identity, lifecycle checkpoints and grouped managed errors. Checkpoints have `observed` status; they do not certify a completed battle. Opt-in failures also capture node-field snapshots and screenshots when rendering is available.
+
+To run the property boundary probe without starting a game or launcher, create an empty `gameplay-property-probe.enabled` file in the app's Documents directory and fully restart. The native launcher opens only the lightweight bootstrap pack, skips gameplay patch orchestration and save/Cloud initialization, then removes the marker after writing the report. The probe checks plain and C# controls, native and exported properties, indexed paths, chained tween completion/callbacks, and any game scenes available in the mounted resource set. Missing game scenes are reported as `blocked`, so this standalone run isolates runtime behavior rather than claiming full gameplay qualification.
 
 Prepare these plain files in the app's Documents directory, then fully restart the app:
 
@@ -45,6 +47,6 @@ After the sweep, exercise Standard → character → embark → opening event/ma
 
 ## Build workflow
 
-The iOS workflow runs managed, save-safety, native-cache and desktop Godot checks before macOS packaging. It cancels superseded runs and uploads commit-labelled probe and IPA artifacts. Native cache fingerprints include build recipes, patches, toolchain and output hashes; `STS2_FORCE_NATIVE_REBUILD=1` bypasses local reuse. The new cache generation requires an initial native rebuild.
+The iOS workflow runs managed, save-safety, native-cache and desktop Godot checks before macOS packaging. It cancels superseded runs and uploads commit-labelled probe and IPA artifacts. Native cache fingerprints include build recipes, patches, toolchain and output hashes; `STS2_FORCE_NATIVE_REBUILD=1` bypasses local reuse. Godot archive normalization now occurs before its fingerprint is recorded, so packaging does not silently invalidate cache evidence.
 
 Pending investigations are the shared iOS property bridge (use the new device probe to identify its boundary), future-version save preservation and the real Steam Cloud HTTP 400. The normal paused-Push behavior on synchronization failure remains in place. Automatic battle/reward assertions and managed-patch hot updates are not implemented by the initialization sweep.

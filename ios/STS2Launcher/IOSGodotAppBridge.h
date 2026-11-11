@@ -26,6 +26,9 @@ IOS_BRIDGE_EXPORT void ios_request_game_launch_and_restart(const char *pck_path,
 IOS_BRIDGE_EXPORT bool ios_get_or_create_device_key(uint8_t *key_out, int key_len);
 typedef int (*Sts2NativeCallbackFn)(int val);
 IOS_BRIDGE_EXPORT int sts2_test_native_callback_roundtrip(Sts2NativeCallbackFn fn, int val);
+// Versioned iOS interpreter detour contract: 1 means the detour body was copied;
+// negative results identify a rejected operation and must fail the managed patch.
+IOS_BRIDGE_EXPORT int32_t sts2_ios_interp_detour_method_v1(void *src_mono_method, void *dst_mono_method);
 
 #ifdef __cplusplus
 }

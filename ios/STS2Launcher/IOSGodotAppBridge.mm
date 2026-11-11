@@ -500,19 +500,26 @@ static void sts2_copy_interp_body(Sts2InterpMethod *dst_target, Sts2InterpMethod
     dst_target->transformed = 1;
 }
 
-IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void *dst_mono_method) {
+IOS_BRIDGE_EXPORT int32_t sts2_ios_interp_detour_method_v1(void *src_mono_method, void *dst_mono_method) {
     if (!src_mono_method || !dst_mono_method) {
-        return;
+        return -1;
     }
 
     Sts2InterpMethod *src_imethod = mono_interp_get_imethod(src_mono_method);
     Sts2InterpMethod *dst_imethod = mono_interp_get_imethod(dst_mono_method);
     if (!src_imethod || !dst_imethod) {
-        return;
+        NSLog(@"[STS2Launcher iOS] Interpreter detour v1 rejected method lookup (source=%p target=%p)", src_imethod, dst_imethod);
+        return -2;
+    }
+    if (src_imethod == dst_imethod) {
+        NSLog(@"[STS2Launcher iOS] Interpreter detour v1 rejected identical source and target methods (%p)", src_imethod);
+        return -3;
     }
 
     // Mark both as optimized before transforming dst_mono_method so tiering opcodes
     // (MINT_TIER_ENTER_METHOD / MINT_TIER_PATCHPOINT) are omitted and never re-transform src_imethod.
+    const unsigned int originalSourceOptimized = src_imethod->optimized;
+    const unsigned int originalTargetOptimized = dst_imethod->optimized;
     dst_imethod->optimized = 1;
     src_imethod->optimized = 1;
 
@@ -531,7 +538,10 @@ IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void
               compiled_dst->transformed, compiled_dst->optimized, compiled_dst->code, compiled_dst->code_type);
         if (src_name) free(src_name);
         if (dst_name) free(dst_name);
-        return;
+        src_imethod->optimized = originalSourceOptimized;
+        dst_imethod->optimized = originalTargetOptimized;
+        __sync_synchronize();
+        return -4;
     }
 
     // Pre-resolve dynamic string literals so MINT_LDSTR_DYNAMIC opcodes become standard MINT_LDSTR
@@ -553,6 +563,7 @@ IOS_BRIDGE_EXPORT void sts2_ios_interp_detour_method(void *src_mono_method, void
           dst_name ? dst_name : "<null>");
     if (src_name) free(src_name);
     if (dst_name) free(dst_name);
+    return 1;
 }
 
 }

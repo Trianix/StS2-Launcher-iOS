@@ -182,21 +182,18 @@ internal static class GameplayPropertyProbe
 
             if (target is GameplayProbeControl custom)
             {
-                Check(label + ":custom-export-read", () =>
+                Check(label + ":custom-property-read", () =>
                 {
-                    // Godot's C# source generator exposes exported C# members
-                    // under their CLR property name by default (PascalCase).
-                    // GDScript-style snake_case is not the generic property key.
-                    var value = custom.Get(nameof(GameplayProbeControl.ProbeExportedVector));
+                    var value = custom.Get(GameplayProbeControl.ProbePropertyName);
                     Require(value.VariantType == Variant.Type.Vector2 && value.AsVector2().IsEqualApprox(custom.ProbeExportedVector),
-                        $"Exported property read mismatch: generic={Describe(value)}, typed={custom.ProbeExportedVector}.");
+                        $"Custom property read mismatch: generic={Describe(value)}, typed={custom.ProbeExportedVector}.");
                 });
-                Check(label + ":custom-export-write", () =>
+                Check(label + ":custom-property-write", () =>
                 {
                     var expected = new Vector2(91, 37);
-                    custom.Set(nameof(GameplayProbeControl.ProbeExportedVector), expected);
+                    custom.Set(GameplayProbeControl.ProbePropertyName, expected);
                     Require(custom.ProbeExportedVector.IsEqualApprox(expected),
-                        $"Exported property write mismatch: expected={expected}, typed-after={custom.ProbeExportedVector}.");
+                        $"Custom property write mismatch: expected={expected}, typed-after={custom.ProbeExportedVector}.");
                 });
             }
         }
@@ -226,6 +223,29 @@ internal static class GameplayPropertyProbe
 
 internal partial class GameplayProbeControl : Control
 {
-    [Export]
+    internal const string ProbePropertyName = "probe_exported_vector";
+
     public Vector2 ProbeExportedVector { get; set; } = new(3, 7);
+
+    public override Godot.Collections.Array<Godot.Collections.Dictionary> _GetPropertyList()
+    {
+        var properties = base._GetPropertyList();
+        properties.Add(new Godot.Collections.Dictionary
+        {
+            ["name"] = ProbePropertyName,
+            ["type"] = (int)Variant.Type.Vector2,
+            ["usage"] = (int)(PropertyUsageFlags.Default | PropertyUsageFlags.ScriptVariable)
+        });
+        return properties;
+    }
+
+    public override Variant _Get(StringName property)
+        => property == ProbePropertyName ? Variant.From(ProbeExportedVector) : base._Get(property);
+
+    public override bool _Set(StringName property, Variant value)
+    {
+        if (property != ProbePropertyName) return base._Set(property, value);
+        ProbeExportedVector = value.AsVector2();
+        return true;
+    }
 }

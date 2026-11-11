@@ -48,6 +48,7 @@ internal static partial class StartupPatchOrchestrator
                 new("Combat background", CombatBackgroundPatches.Apply),
                 new("Common UI buttons", CommonUiButtonPatches.Apply),
                 new("Patch notes screen", PatchNotesScreenPatches.Apply),
+                new("Gameplay and submenu safety", GameplaySubmenuPatches.Apply),
             }
         );
 

@@ -17,6 +17,7 @@ internal static class PatchHelper
         MethodInfo prefix = null,
         MethodInfo postfix = null,
         MethodInfo transpiler = null,
+        MethodInfo finalizer = null,
         BindingFlags flags = AllFlags
     )
     {
@@ -27,7 +28,36 @@ internal static class PatchHelper
                 if (!TryGetPatchMethod(targetType, methodName, flags, out var target))
                     return false;
 
-                PatchMethod(harmony, target, prefix, postfix, transpiler);
+                PatchMethod(harmony, target, prefix, postfix, transpiler, finalizer);
+                return true;
+            }
+        );
+    }
+
+    internal static void Patch(
+        Harmony harmony,
+        Type targetType,
+        string methodName,
+        Type[] parameters,
+        MethodInfo prefix = null,
+        MethodInfo postfix = null,
+        MethodInfo transpiler = null,
+        MethodInfo finalizer = null,
+        BindingFlags flags = AllFlags
+    )
+    {
+        PatchSafely(
+            $"{targetType.Name}.{methodName}",
+            () =>
+            {
+                var target = targetType.GetMethod(methodName, flags, null, parameters, null);
+                if (target == null)
+                {
+                    Log($"FAILED {targetType.Name}.{methodName}: overload not found");
+                    return false;
+                }
+
+                PatchMethod(harmony, target, prefix, postfix, transpiler, finalizer);
                 return true;
             }
         );
@@ -167,14 +197,16 @@ internal static class PatchHelper
         MethodInfo target,
         MethodInfo prefix = null,
         MethodInfo postfix = null,
-        MethodInfo transpiler = null
+        MethodInfo transpiler = null,
+        MethodInfo finalizer = null
     )
     {
         harmony.Patch(
             target,
             prefix: ToHarmonyMethod(prefix),
             postfix: ToHarmonyMethod(postfix),
-            transpiler: ToHarmonyMethod(transpiler)
+            transpiler: ToHarmonyMethod(transpiler),
+            finalizer: ToHarmonyMethod(finalizer)
         );
     }
 

@@ -245,6 +245,7 @@ internal static partial class Program
             ("handoff timeout recovery rejects late callbacks", HandoffTimeoutRecoveryRejectsLateCallbacks),
             ("handoff simulates 256 reordered event sequences", HandoffSimulatesReorderedEventSequences),
             ("button patches target methods exist", ButtonPatchesTargetMethodsExist),
+            ("gameplay submenu patches target methods exist", GameplaySubmenuPatchesTargetMethodsExist),
         };
 
         if (args.Length > 0)

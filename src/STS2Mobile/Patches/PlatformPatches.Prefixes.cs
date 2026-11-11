@@ -1314,7 +1314,10 @@ internal static partial class PlatformPatches
             {
                 if (child != owner)
                 {
-                    child.Owner = owner;
+                    if (child.Owner == null)
+                    {
+                        child.Owner = owner;
+                    }
                     child.UniqueNameInOwner = true;
                 }
             }

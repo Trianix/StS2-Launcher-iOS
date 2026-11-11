@@ -26,7 +26,7 @@ internal static partial class StartupPatchOrchestrator
             attempts
         );
         PatchHelper.Log(
-            $"[{group.Name}] {result.Applied}/{result.Total} patches applied, {failed} failed in {result.Elapsed.TotalMilliseconds:F1}ms"
+            $"[{group.Name}] {result.Applied}/{result.Total} patches applied ({result.Partial} partial), {result.Skipped} skipped, {failed} failed in {result.Elapsed.TotalMilliseconds:F1}ms"
         );
         return result;
     }
@@ -35,10 +35,14 @@ internal static partial class StartupPatchOrchestrator
     {
         var patchStopwatch = Stopwatch.StartNew();
         var helperFailures = new List<string>();
+        var skipped = new List<string>();
+        var applied = false;
         void CaptureHelperFailure(string message)
         {
             if (IsHelperPatchFailure(message))
                 helperFailures.Add(message);
+            if (message.StartsWith("SKIPPED ", StringComparison.Ordinal)) skipped.Add(message);
+            if (message.StartsWith("Patched ", StringComparison.Ordinal)) applied = true;
         }
 
         PatchHelper.LogEmitted += CaptureHelperFailure;
@@ -55,7 +59,11 @@ internal static partial class StartupPatchOrchestrator
             }
 
             BootstrapTrace.Log($"Finished patch step: {group.Name}/{step.Name}");
-            return new PatchAttempt(step.Name, true, patchStopwatch.Elapsed, null);
+            return new PatchAttempt(step.Name, true, patchStopwatch.Elapsed, null)
+            {
+                Status = skipped.Count == 0 ? "applied" : applied ? "partial" : "skipped",
+                SkippedComponents = skipped.ToArray(),
+            };
         }
         catch (Exception ex)
         {

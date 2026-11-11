@@ -11,6 +11,7 @@ IOS_DIR="$ROOT/ios"
 XCODEPROJ="$IOS_DIR/STS2Launcher.xcodeproj"
 
 echo "=== Building STS2Launcher iOS ($VERSION_NAME / $VERSION_CODE) ==="
+BUILD_REVISION="$(git -C "$ROOT" rev-parse HEAD)"
 
 # 0. Stage Reference Assemblies & iOS .NET 9.0.7 Runtime BCL
 UPSTREAM_PUBLISH_DIR="$ROOT/upstream/godot-export/.godot/mono/publish/arm64"
@@ -52,6 +53,10 @@ if [ -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsa
     cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$UPSTREAM_PUBLISH_DIR/"
     cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$IOS_BCL_ASSETS_DIR/"
 fi
+
+echo "Checking managed behavior before native packaging..."
+dotnet build "$ROOT/tests/STS2Mobile.GameIdentityTests/STS2Mobile.GameIdentityTests.csproj" -c Release -p:SourceRevisionId="$BUILD_REVISION"
+dotnet "$ROOT/tests/STS2Mobile.GameIdentityTests/bin/Release/net9.0/STS2Mobile.GameIdentityTests.dll"
 
 echo "Patching MonoMod.Core for iOS..."
 dotnet run --project "$ROOT/tools/SteamKitAndroidPatch/SteamKitAndroidPatch.csproj" -c Release -- --patch-monomod-ios "$IOS_BCL_ASSETS_DIR/MonoMod.Core.dll"
@@ -184,7 +189,7 @@ cp -R "$SPINE_EXTRACT_DIR/bin/ios/libspine_godot.ios.template_release.framework"
 
 # 1. Build Managed Assembly
 echo "Publishing STS2Mobile managed assembly..."
-dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release
+dotnet publish "$ROOT/src/STS2Mobile/STS2Mobile.csproj" -c Release -p:SourceRevisionId="$BUILD_REVISION"
 
 MANAGED_PUBLISH="$ROOT/src/STS2Mobile/bin/Release/net9.0/publish"
 if [ ! -d "$MANAGED_PUBLISH" ]; then

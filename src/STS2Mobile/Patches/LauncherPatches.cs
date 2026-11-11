@@ -12,7 +12,7 @@ namespace STS2Mobile.Patches;
 // Installs Harmony hooks for the mobile launcher and mobile startup behavior.
 internal static class LauncherPatches
 {
-    private sealed class GameplaySaveStoreAdapter(AndroidLocalSaveStore inner) : ISaveStore
+    internal sealed class GameplaySaveStoreAdapter(AndroidLocalSaveStore inner) : ISaveStore
     {
         public string ReadFile(string path) => inner.ReadFile(path);
         public Task<string> ReadFileAsync(string path) => inner.ReadFileAsync(path);
@@ -103,9 +103,10 @@ internal static class LauncherPatches
 
         var platform = OperatingSystem.IsIOS() ? "iOS" : "Android";
         PatchHelper.Log($"[Save] Constructing {platform} gameplay SaveManager");
+        var isolated = Diagnostics.GameplayTestSession.SaveDirectory;
         __result = new SaveManager(
             new GameplaySaveStoreAdapter(
-                new AndroidLocalSaveStore(
+                isolated != null ? new AndroidLocalSaveStore(isolated) : new AndroidLocalSaveStore(
                     SaveSyncService.NotifyGameplayMutationCommitted
                 )
             )

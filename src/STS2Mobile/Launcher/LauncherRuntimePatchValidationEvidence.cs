@@ -65,6 +65,9 @@ internal static partial class LauncherRuntimePatchValidationEvidence
                 appliedPatchCount = result.AppliedPatchCount,
                 failedPatchCount = result.FailedPatchCount,
                 totalPatchCount = result.TotalPatchCount,
+                skippedPatchCount = result.SkippedPatchCount,
+                partialPatchCount = result.PartialPatchCount,
+                patchAttempts = result.Attempts.Select(attempt => new { attempt.Name, attempt.Status, attempt.SkippedComponents, attempt.Failure }),
                 durationMs = result.Duration.TotalMilliseconds,
                 failureMessages = failures
             };

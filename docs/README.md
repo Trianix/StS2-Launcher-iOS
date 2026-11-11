@@ -15,6 +15,7 @@
 - [v0.2.436 release notes](release-notes/v0.2.436.md): original mod framework on Android.
 - [Changelog](../CHANGELOG.md)
 - [Android validation runbook](runbook-android-validation.md): how to test a specific build.
+- [iOS gameplay diagnostics](ios-gameplay-diagnostics.md): shared probes, isolated saves and room initialization fixtures.
 
 ## Working on the code
 

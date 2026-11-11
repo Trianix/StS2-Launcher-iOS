@@ -176,7 +176,7 @@ internal static partial class LauncherGameStartupRecovery
             subscribed = true;
             // Capture engine/storage state on the Godot thread. The existing
             // timer persists only immutable evidence, even if this thread stalls.
-            var dataDir = OS.GetDataDir();
+            var dataDir = LauncherDiagnostics.DiagnosticDataDir;
             var branch = LauncherPreferences.ReadGameBranch();
             var attemptId = LauncherHandoffStateOwner.Shared.Capture().AttemptId;
             var sceneDetails = CapturePostStartupSceneDetails(game, attemptId);

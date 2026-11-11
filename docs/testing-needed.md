@@ -1,8 +1,10 @@
 # Testing needed
 
-Updated: 2026-10-26
+Updated: 2026-11-11
 
 Use the smallest test that exercises the affected behavior. Do not turn desktop, fake-service, source inspection, or one-device evidence into a broader claim.
+
+For the iOS gameplay changes, run the [shared gameplay probes](ios-gameplay-diagnostics.md) and then the isolated device route. An executable game DLL is required for the save adapter and engine checks; the metadata-only iOS compile reference cannot execute these calls. Combat actions, rewards, touch behavior and save/continue remain device acceptance requirements.
 
 ## Required local checks
 

@@ -35,32 +35,8 @@ internal static partial class Program
 
             string[] patchMethodNames =
             {
-                "SingleplayerSubmenuRefreshButtonsPrefix",
-                "SingleplayerSubmenuReadyPostfix",
-                "SingleplayerSubmenuOnSubmenuOpenedPostfix",
-                "SingleplayerSubmenuOpenCharacterSelectPrefix",
-                "SingleplayerSubmenuOpenCustomScreenPrefix",
-                "SingleplayerSubmenuOpenDailyScreenPrefix",
-                "CharacterSelectScreenReadyPrefix",
-                "CharacterSelectScreenReadyPostfix",
-                "CharacterSelectScreenReadyFinalizer",
-                "CharacterSelectScreenInitializeSingleplayerPrefix",
-                "CharacterSelectScreenInitializeSingleplayerFinalizer",
-                "CharacterSelectScreenOnEmbarkPressedPrefix",
-                "CharacterSelectScreenBeginRunPrefix",
-                "CustomRunScreenReadyPrefix",
-                "CustomRunScreenReadyPostfix",
-                "CustomRunScreenReadyFinalizer",
-                "CustomRunScreenInitializeSingleplayerPrefix",
-                "CustomRunScreenInitializeSingleplayerFinalizer",
-                "DailyRunScreenReadyPrefix",
-                "DailyRunScreenReadyPostfix",
-                "DailyRunScreenReadyFinalizer",
-                "DailyRunScreenInitializeSingleplayerPrefix",
-                "DailyRunScreenInitializeSingleplayerFinalizer",
-                "RunReadyPrefix",
-                "RunReadyPostfix",
-                "RunReadyFinalizer"
+                "OpenCharacterSelect", "OpenCustomScreen", "OpenDailyScreen",
+                "BeforePush", "AfterPush", "AscensionAnimIn"
             };
 
             foreach (var name in patchMethodNames)

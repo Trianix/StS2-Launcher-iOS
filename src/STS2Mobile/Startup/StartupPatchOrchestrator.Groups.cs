@@ -18,6 +18,8 @@ internal static partial class StartupPatchOrchestrator
             new PatchStep[]
             {
                 new("Platform compatibility", PlatformPatches.Apply),
+                new("Scene binding contracts", SceneBindingPatches.Apply),
+                new("Gameplay diagnostics", Diagnostics.GameplayDiagnosticsPatches.Apply),
                 new("Controller input compatibility", ControllerInputPatches.Apply),
                 new("Original mod framework integration", ModLoaderPatches.Apply),
                 new("Launcher startup gate", LauncherPatches.Apply),

@@ -6,16 +6,17 @@ RECIPE_PATH="$ROOT/patches/mono/runtime.json"
 PATCH_PATH="$ROOT/patches/mono/android-net9.patch"
 IOS_LIBS="$ROOT/ios/libs"
 CACHE_DIR="$ROOT/tmp/ios-mono"
-SOURCE_DIR="$CACHE_DIR/source"
-BUILD_DIR="$CACHE_DIR/build-arm64"
-
+# A changed patch must never reuse an already-patched source tree.
 COMMIT="3c298d9f00936d651cc47d221762474e25277672"
 ARCHIVE_URL="https://codeload.github.com/dotnet/runtime/tar.gz/$COMMIT"
+PATCH_ID="$(shasum -a 256 "$PATCH_PATH" | cut -c1-16)"
+SOURCE_DIR="$CACHE_DIR/source-$COMMIT-$PATCH_ID"
+BUILD_DIR="$CACHE_DIR/build-arm64-$COMMIT-$PATCH_ID"
 
 mkdir -p "$CACHE_DIR" "$IOS_LIBS"
 
-if [ -f "$IOS_LIBS/libmonosgen-2.0.a" ]; then
-    echo "Found cached Mono iOS library at $IOS_LIBS/libmonosgen-2.0.a, skipping build."
+if python3 "$ROOT/scripts/ios-native-fingerprint.py" check mono "$IOS_LIBS/libmonosgen-2.0.a"; then
+    echo "Mono iOS library matches source recipe and toolchain; reusing."
     exit 0
 fi
 
@@ -78,6 +79,7 @@ if [ -f "$OUTPUT_LIB" ]; then
         cp "$OUTPUT_LIB" "$IOS_LIBS/libmonosgen-2.0.a"
     fi
     echo "Staged libmonosgen-2.0.a at $IOS_LIBS/libmonosgen-2.0.a"
+    python3 "$ROOT/scripts/ios-native-fingerprint.py" record mono "$IOS_LIBS/libmonosgen-2.0.a"
 else
     echo "ERROR: libmonosgen library not found in $BUILD_DIR"
     exit 1

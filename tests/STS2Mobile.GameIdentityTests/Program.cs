@@ -24,6 +24,14 @@ internal static partial class Program
 
         var tests = new (string Name, Action Run)[]
         {
+            ("gameplay stabilization: transition does not retry", GameplayTransitionDoesNotRetry),
+            ("gameplay stabilization: cleanup preserves failure", GameplayTransitionRetainsCleanupFailure),
+            ("gameplay stabilization: errors retain phase", GameplayReportGroupsErrorsByPhase),
+            ("gameplay stabilization: blocked steps remain blocked", GameplayReportDoesNotPromoteBlockedSteps),
+            ("gameplay stabilization: test saves stay isolated", GameplaySessionRejectsEscapingPaths),
+            ("gameplay stabilization: scene references reject ambiguity", SceneBindingRejectsAmbiguousCandidates),
+            ("gameplay stabilization: required lookups preserve control flow", SceneBindingRewritesRequiredLookupOnly),
+            ("gameplay stabilization: patch results distinguish skips", PatchResultsDistinguishSkippedSteps),
             ("Workshop runtime sibling writes remain launchable", WorkshopRuntimeSiblingWritesRemainLaunchable),
             ("Workshop same revision sync retains runtime writes", WorkshopSameRevisionSyncRetainsRuntimeWrites),
             ("Workshop same revision restaging retains runtime writes", WorkshopSameRevisionRestagingRetainsRuntimeWrites),

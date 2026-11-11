@@ -9,8 +9,8 @@ EXPECTED_GODOT_VERSION="${EXPECTED_GODOT_VERSION:-4.5.1-stable}"
 
 mkdir -p "$IOS_LIBS"
 
-if [ -f "$IOS_LIBS/libgodot.ios.template_release.arm64.a" ]; then
-    echo "Found cached Godot iOS library at $IOS_LIBS/libgodot.ios.template_release.arm64.a, skipping build."
+if python3 "$ROOT/scripts/ios-native-fingerprint.py" check godot "$IOS_LIBS/libgodot.ios.template_release.arm64.a"; then
+    echo "Godot iOS library matches source recipe and toolchain; reusing."
     exit 0
 fi
 
@@ -43,13 +43,11 @@ cd "$GODOT_DIR"
 scons platform=ios arch=arm64 target="$TARGET" module_mono_enabled=yes vulkan=no metal=yes $CCACHE_OPTS -j"$jobs"
 
 BUILT_LIB="$GODOT_DIR/bin/libgodot.ios.$TARGET.arm64.a"
-if [ ! -f "$BUILT_LIB" ]; then
-    BUILT_LIB="$(find "$GODOT_DIR/bin" -name "libgodot.ios*.a" | head -n 1)"
-fi
 if [ -z "$BUILT_LIB" ] || [ ! -f "$BUILT_LIB" ]; then
     echo "ERROR: Expected Godot library not found in $GODOT_DIR/bin"
     exit 1
 fi
 
 cp "$BUILT_LIB" "$IOS_LIBS/libgodot.ios.template_release.arm64.a"
+python3 "$ROOT/scripts/ios-native-fingerprint.py" record godot "$IOS_LIBS/libgodot.ios.template_release.arm64.a"
 echo "Staged Godot iOS library at $IOS_LIBS/libgodot.ios.template_release.arm64.a"

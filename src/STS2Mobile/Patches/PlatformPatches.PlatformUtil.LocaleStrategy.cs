@@ -486,7 +486,7 @@ internal static partial class PlatformPatches
                 prefix: new HarmonyMethod(Prefix(nameof(MainMenuReadyPrefix))),
                 finalizer: new HarmonyMethod(Prefix(nameof(MainMenuReadyFinalizer)))
             );
-            PatchHelper.Log("Patched NMainMenu._Ready (unique node resolver and resilient initialization finalizer)");
+            PatchHelper.Log("Patched NMainMenu._Ready (patch notes state and initialization failure reporting)");
         }
         catch (Exception ex)
         {

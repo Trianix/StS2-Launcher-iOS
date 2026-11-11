@@ -51,6 +51,8 @@ internal static partial class LauncherDiagnostics
     private const int SmallAttachmentMaxChars = 64 * 1024;
     private static IEnumerable<DiagnosticAttachment> SummarySmallFiles(string dataDir)
     {
+        if (Diagnostics.GameplayDiagnostics.ReportPath is string gameplayReport)
+            yield return new DiagnosticAttachment(new DiagnosticFile("Gameplay diagnostics", gameplayReport), 16 * 1024);
         yield return new DiagnosticAttachment(StartupMarker(dataDir), 2048);
         yield return new DiagnosticAttachment(StartupContext(dataDir), 4096);
         yield return new DiagnosticAttachment(MainMenuPreparation(dataDir), 4096);
@@ -75,6 +77,8 @@ internal static partial class LauncherDiagnostics
 
     private static IEnumerable<DiagnosticAttachment> RawErrorLogFiles(string dataDir)
     {
+        if (Diagnostics.GameplayDiagnostics.ReportPath is string gameplayReport)
+            yield return new DiagnosticAttachment(new DiagnosticFile("Gameplay diagnostics", gameplayReport), LargeAttachmentMaxChars);
         yield return new DiagnosticAttachment(StartupMarker(dataDir), SmallAttachmentMaxChars);
         yield return new DiagnosticAttachment(StartupContext(dataDir), SmallAttachmentMaxChars);
         yield return new DiagnosticAttachment(MainMenuPreparation(dataDir), SmallAttachmentMaxChars);

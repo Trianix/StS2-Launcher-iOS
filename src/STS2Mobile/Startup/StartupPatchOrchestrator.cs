@@ -35,7 +35,7 @@ internal static partial class StartupPatchOrchestrator
         PatchHelper.Log(
             $"[startup] Patch orchestration finished in {result.Duration.TotalMilliseconds:F1}ms: "
             + $"{result.AppliedPatchCount}/{result.TotalPatchCount} applied, "
-            + $"{result.FailedPatchCount} failed, criticalFailed={result.CriticalFailed}"
+            + $"{result.SkippedPatchCount} skipped, {result.PartialPatchCount} partial, {result.FailedPatchCount} failed, criticalFailed={result.CriticalFailed}"
         );
 
         return result;

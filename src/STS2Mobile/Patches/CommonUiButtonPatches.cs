@@ -296,17 +296,7 @@ internal static class CommonUiButtonPatches
                 oldTween.Kill();
             }
 
-            try
-            {
-                var tween = __instance.CreateTween();
-                traverse.Field("_moveTween").SetValue(tween);
-                var tweener = tween.TweenProperty(__instance, "position", showPos, 0.35);
-                tweener?.SetEase(Tween.EaseType.Out)?.SetTrans(Tween.TransitionType.Back);
-            }
-            catch
-            {
-                // Position is already explicitly set to showPos
-            }
+            traverse.Field("_moveTween").SetValue(null);
         }
         catch (Exception ex)
         {
@@ -437,17 +427,7 @@ internal static class CommonUiButtonPatches
                 oldTween.Kill();
             }
 
-            try
-            {
-                var tween = __instance.CreateTween();
-                traverse.Field("_moveTween").SetValue(tween);
-                var tweener = tween.TweenProperty(__instance, "position", showPos, 0.35);
-                tweener?.SetEase(Tween.EaseType.Out)?.SetTrans(Tween.TransitionType.Back)?.FromCurrent();
-            }
-            catch
-            {
-                // Position is already explicitly set to showPos
-            }
+            traverse.Field("_moveTween").SetValue(null);
         }
         catch (Exception ex)
         {

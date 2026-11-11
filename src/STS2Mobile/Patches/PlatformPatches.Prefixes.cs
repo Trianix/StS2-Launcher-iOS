@@ -1149,9 +1149,6 @@ internal static partial class PlatformPatches
             throw new InvalidOperationException("Failed to instantiate NMainMenu");
         }
 
-        // Ensure unique names in owner so GetNode("%Name") resolves properly for direct child components of NMainMenu
-        EnsureUniqueNamesInOwner(mainMenu, mainMenu);
-
         // Explicitly suppress initial open state on PatchNotesScreen if present
         try
         {
@@ -1303,50 +1300,20 @@ internal static partial class PlatformPatches
         }
     }
 
-    internal static void EnsureUniqueNamesInOwner(Node current, Node owner)
-    {
-        if (current == null || owner == null)
-            return;
-
-        foreach (var child in current.GetChildren())
-        {
-            try
-            {
-                if (child != owner)
-                {
-                    if (child.Owner == null)
-                    {
-                        child.Owner = owner;
-                    }
-                    child.UniqueNameInOwner = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[EnsureUniqueNamesInOwner] {child.Name}: {ex.Message}");
-            }
-            // Do NOT recurse into child; each subscene (e.g. PatchNotesScreen, CharacterSelectScreen)
-            // manages its own scene tree and internal node names. Recursion causes cross-scene collisions
-            // and 60,000+ duplicate name warnings.
-        }
-    }
-
     private static void MainMenuReadyPrefix(NMainMenu __instance)
     {
         try
         {
-            EnsureUniqueNamesInOwner(__instance, __instance);
             if (__instance.PatchNotesScreen != null)
             {
                 __instance.PatchNotesScreen.Visible = false;
                 HarmonyLib.Traverse.Create(__instance.PatchNotesScreen).Property("IsOpen").SetValue(false);
                 __instance.PatchNotesScreen.MouseFilter = Control.MouseFilterEnum.Ignore;
             }
-            PatchHelper.Log("[MainMenuReadyPrefix] Unique names registered for direct NMainMenu children.");
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[MainMenuReadyPrefix] EnsureUniqueNamesInOwner warning: {ex.Message}");
+            PatchHelper.Log($"[MainMenuReadyPrefix] Patch notes state warning: {ex.Message}");
         }
     }
 
@@ -1354,63 +1321,8 @@ internal static partial class PlatformPatches
     {
         if (__exception != null)
         {
-            PatchHelper.Log($"[MainMenuReadyFinalizer] Caught exception in NMainMenu._Ready: {__exception}. Executing recovery fallback...");
-
-            try
-            {
-                var audioManager = MegaCrit.Sts2.Core.Nodes.Audio.NAudioManager.Instance;
-                if (audioManager != null)
-                {
-                    audioManager.PlayMusic("event:/music/menu_update");
-                    PatchHelper.Log("[MainMenuReadyFinalizer] Fallback PlayMusic invoked.");
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback PlayMusic error: {ex.Message}");
-            }
-
-            try
-            {
-                var submenusProp = typeof(NMainMenu).GetProperty("SubmenuStack");
-                var submenus = submenusProp?.GetValue(__instance) as MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack
-                    ?? __instance.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack>("%Submenus")
-                    ?? __instance.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenuSubmenuStack>("Submenus");
-                if (submenus != null)
-                {
-                    submenus.InitializeForMainMenu(__instance);
-                    PatchHelper.Log("[MainMenuReadyFinalizer] Fallback SubmenuStack initialized.");
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback SubmenuStack error: {ex.Message}");
-            }
-
-            try
-            {
-                __instance.RefreshButtons();
-                PatchHelper.Log("[MainMenuReadyFinalizer] Fallback RefreshButtons invoked.");
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback RefreshButtons error: {ex.Message}");
-            }
-
-            try
-            {
-                var game = NGame.Instance;
-                if (game?.Transition != null)
-                {
-                    DismissTransition(game.Transition);
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[MainMenuReadyFinalizer] Fallback DismissTransition error: {ex.Message}");
-            }
-
-            return null; // Suppress the exception so Godot C# bridge does not fail
+            Diagnostics.GameplayDiagnostics.Failure("NMainMenu._Ready", __exception, __instance);
+            return __exception;
         }
 
         try

@@ -25,7 +25,7 @@ internal static class EventLayoutPatches
     internal static void Apply(Harmony harmony)
     {
         PatchHelper.Log(
-            "Event layout patch disabled: current Android runtime cannot safely Harmony-wrap private-field-heavy event layout methods."
+            "SKIPPED Event layout: current mobile runtime cannot safely Harmony-wrap private-field-heavy event layout methods."
         );
     }
 

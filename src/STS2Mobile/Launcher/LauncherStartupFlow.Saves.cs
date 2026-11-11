@@ -19,7 +19,7 @@ internal static partial class LauncherStartupFlow
         ConfigureSaveSyncForGameProcess();
         if (!SaveSyncService.TryGetActive(out var service))
             service = null;
-        var skipSync = startup.ShouldSkipShaderWarmup();
+        var skipSync = startup.ShouldSkipShaderWarmup() || Diagnostics.GameplayTestSession.Isolated;
         var loaded = false;
         await RunPreloadSaveBoundaryAsync(
             () => SynchronizeSavesBeforeLoadAsync(service, skipSync),
@@ -66,7 +66,9 @@ internal static partial class LauncherStartupFlow
         {
             service?.PauseAutomaticPush();
             PatchHelper.Log(
-                "[Cloud] Pre-load synchronization skipped for Safe Start; automatic Push paused"
+                Diagnostics.GameplayTestSession.Isolated
+                    ? "[Cloud] Pre-load synchronization skipped for isolated gameplay test session; automatic Push paused"
+                    : "[Cloud] Pre-load synchronization skipped for Safe Start; automatic Push paused"
             );
             return;
         }
@@ -123,6 +125,12 @@ internal static partial class LauncherStartupFlow
 
     private static void ConfigureSaveSyncForGameProcess()
     {
+        if (Diagnostics.GameplayTestSession.Isolated)
+        {
+            if (SaveSyncService.TryGetActive(out var active)) active.PauseAutomaticPush();
+            PatchHelper.Log("[Cloud] Disabled for isolated gameplay test session");
+            return;
+        }
         if (SaveSyncService.TryGetActive(out _))
             return;
 

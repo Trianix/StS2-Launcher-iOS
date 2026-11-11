@@ -37,6 +37,19 @@ public partial class PreviewRoot : Control
         System.Environment.SetEnvironmentVariable("STS2_LAUNCHER_PREVIEW", "1");
         ParseArguments(OS.GetCmdlineUserArgs());
 
+        if (ReadBool("gameplay-stabilization-test", false))
+        {
+            var context = AssemblyLoadContext.GetLoadContext(typeof(PreviewRoot).Assembly) ?? AssemblyLoadContext.Default;
+            var directory = ReadRequiredDirectory("managed-runtime-directory");
+            Assembly? Resolve(AssemblyLoadContext loadContext, AssemblyName requestedName)
+                => ResolveManagedRuntimeDependency(loadContext, requestedName, directory);
+            context.Resolving += Resolve;
+            try { await GameplayStabilizationRuntimeTest.RunAsync(this, ReadRequiredDirectory("report-directory"), Read("base-game-pck-path", "")); }
+            finally { context.Resolving -= Resolve; }
+            GetTree().Quit();
+            return;
+        }
+
         if (ReadBool("asset-preload-test", false))
         {
             var context = AssemblyLoadContext.GetLoadContext(typeof(PreviewRoot).Assembly)
@@ -371,6 +384,9 @@ public partial class PreviewRoot : Control
     {
         var simpleName = requestedName.Name;
         if (string.IsNullOrWhiteSpace(simpleName)
+            || simpleName.StartsWith("System.", StringComparison.Ordinal)
+            || simpleName.StartsWith("Microsoft.", StringComparison.Ordinal)
+            || simpleName is "mscorlib" or "netstandard"
             || !string.Equals(simpleName, Path.GetFileName(simpleName), StringComparison.Ordinal))
         {
             return null;

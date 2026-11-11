@@ -6,6 +6,8 @@ using MegaCrit.Sts2.Core.Saves;
 using SteamKit2;
 using STS2Mobile;
 using STS2Mobile.Launcher;
+using STS2Mobile.Patches;
+using STS2Mobile.Diagnostics;
 using STS2Mobile.Steam;
 using STS2Mobile.Steam.Workshop;
 
@@ -18,6 +20,10 @@ internal static class Program
     {
         if (args.Length != 0)
             throw new ArgumentException("The focused probe does not accept arguments.");
+        await RunAsync(
+            "isolated gameplay saves preserve the normal profile",
+            IsolatedGameplaySavesPreserveNormalProfileAsync
+        );
         await RunAsync(
             "local save paths stay contained",
             LocalSavePathsStayContainedAsync
@@ -67,13 +73,36 @@ internal static class Program
             AndroidStartupGuardStaysAliveAfterMainMenuPreparationAsync
         );
 
-        Console.WriteLine($"Focused local-save, synchronization, mod, version, and startup probe passed {_passed}/12 scenarios.");
+        Console.WriteLine($"Focused local-save, synchronization, mod, version, and startup probe passed {_passed}/13 scenarios.");
         Console.WriteLine(
             "Scope: FakeSaveRemote validates deterministic synchronization behavior only; it does not prove Steam Cloud or Android transport."
         );
         Console.WriteLine(
             "Scope: the representative mod is a desktop fixture; it does not prove Android mod activation or an in-game effect."
         );
+    }
+
+    private static Task IsolatedGameplaySavesPreserveNormalProfileAsync()
+    {
+        var root = NewTempDirectory();
+        try
+        {
+            var original = Path.Combine(root, "settings.save");
+            File.WriteAllText(original, "normal profile");
+            File.WriteAllText(Path.Combine(root, GameplayTestSession.MarkerName), "isolation-contract");
+            GameplayTestSession.Configure(root, root);
+            Expect(GameplayTestSession.Isolated, "The explicit session was not selected before save construction.");
+            var expected = GameplayTestSession.ResolveDirectory(root, "isolation-contract");
+            Expect(GameplayTestSession.SaveDirectory == expected, "The session selected the wrong storage root.");
+            ISaveStore store = new LauncherPatches.GameplaySaveStoreAdapter(new AndroidLocalSaveStore(expected));
+            store.WriteFile("user://settings.save", "test profile");
+            store.WriteFile("profile1/progress.save", "test progress");
+            Expect(File.ReadAllText(original) == "normal profile", "The isolated write changed the normal profile.");
+            Expect(File.ReadAllText(Path.Combine(expected, "settings.save")) == "test profile", "The test write did not reach isolated storage.");
+            Expect(!File.Exists(Path.Combine(root, "profile1/progress.save")), "Test progress escaped into the normal profile.");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+        return Task.CompletedTask;
     }
 
     private static Task SelectedGameVersionSurvivesRestartAndDrivesLaunchReadinessAsync()
@@ -242,7 +271,7 @@ internal static class Program
         var root = Path.Combine(container, "saves");
         try
         {
-            ISaveStore store = new AndroidLocalSaveStore(root);
+            ISaveStore store = new LauncherPatches.GameplaySaveStoreAdapter(new AndroidLocalSaveStore(root));
             store.WriteFile("profile1/saves/progress.save", "nested");
             store.WriteFile("user://settings.save", "user-data");
 
@@ -281,7 +310,7 @@ internal static class Program
         try
         {
             var callbackSawCommittedBytes = false;
-            ISaveStore store = new AndroidLocalSaveStore(
+            ISaveStore store = new LauncherPatches.GameplaySaveStoreAdapter(new AndroidLocalSaveStore(
                 root,
                 path =>
                 {
@@ -291,7 +320,7 @@ internal static class Program
                             File.ReadAllText(Path.Combine(root, path)) == "committed";
                     }
                 }
-            );
+            ));
             store.WriteFile("profile.save", "committed");
             Expect(
                 callbackSawCommittedBytes,
@@ -653,10 +682,10 @@ internal static class Program
             Expect(baseline.Success, "The failed-Push fixture did not establish a baseline.");
 
             remote.FailNextUpload();
-            ISaveStore gameplayStore = new AndroidLocalSaveStore(
+            ISaveStore gameplayStore = new LauncherPatches.GameplaySaveStoreAdapter(new AndroidLocalSaveStore(
                 root,
                 service.NotifyLocalMutationCommitted
-            );
+            ));
             gameplayStore.WriteFile(path, changed);
             Expect(
                 service.FlushAutomaticPush(TimeSpan.FromSeconds(5)),
@@ -737,10 +766,10 @@ internal static class Program
             Expect(baseline.Success, "The automatic-Push fixture did not establish a baseline.");
 
             remote.HoldNextUpload();
-            ISaveStore gameplayStore = new AndroidLocalSaveStore(
+            ISaveStore gameplayStore = new LauncherPatches.GameplaySaveStoreAdapter(new AndroidLocalSaveStore(
                 root,
                 service.NotifyLocalMutationCommitted
-            );
+            ));
             try
             {
                 await Task.Run(() => gameplayStore.WriteFile(path, changed))

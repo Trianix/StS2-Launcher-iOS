@@ -31,6 +31,24 @@ internal static class CommonUiButtonPatches
             "OnDisable",
             prefix: PatchHelper.Method(typeof(CommonUiButtonPatches), nameof(BackButtonOnDisablePrefix))
         );
+        PatchHelper.Patch(
+            harmony,
+            typeof(NBackButton),
+            "OnPress",
+            prefix: PatchHelper.Method(typeof(CommonUiButtonPatches), nameof(BackButtonOnPressPrefix))
+        );
+        PatchHelper.Patch(
+            harmony,
+            typeof(NBackButton),
+            "OnFocus",
+            prefix: PatchHelper.Method(typeof(CommonUiButtonPatches), nameof(BackButtonOnFocusPrefix))
+        );
+        PatchHelper.Patch(
+            harmony,
+            typeof(NBackButton),
+            "OnUnfocus",
+            prefix: PatchHelper.Method(typeof(CommonUiButtonPatches), nameof(BackButtonOnUnfocusPrefix))
+        );
 
         // Patch NConfirmButton
         PatchHelper.Patch(
@@ -155,6 +173,63 @@ internal static class CommonUiButtonPatches
         catch (Exception ex)
         {
             PatchHelper.Log($"[CommonUiButtonPatches] BackButton.OnDisable error: {ex.Message}");
+        }
+        return false;
+    }
+
+    private static bool BackButtonOnPressPrefix(NBackButton __instance)
+    {
+        try
+        {
+            var traverse = Traverse.Create(__instance);
+            var oldTween = traverse.Field<Tween>("_hoverTween").Value;
+            if (oldTween != null && oldTween.IsValid())
+            {
+                oldTween.Kill();
+            }
+            __instance.Scale = new Vector2(0.95f, 0.95f);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[CommonUiButtonPatches] BackButton.OnPress error: {ex.Message}");
+        }
+        return false;
+    }
+
+    private static bool BackButtonOnFocusPrefix(NBackButton __instance)
+    {
+        try
+        {
+            var traverse = Traverse.Create(__instance);
+            var oldTween = traverse.Field<Tween>("_hoverTween").Value;
+            if (oldTween != null && oldTween.IsValid())
+            {
+                oldTween.Kill();
+            }
+            __instance.Scale = new Vector2(1.05f, 1.05f);
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[CommonUiButtonPatches] BackButton.OnFocus error: {ex.Message}");
+        }
+        return false;
+    }
+
+    private static bool BackButtonOnUnfocusPrefix(NBackButton __instance)
+    {
+        try
+        {
+            var traverse = Traverse.Create(__instance);
+            var oldTween = traverse.Field<Tween>("_hoverTween").Value;
+            if (oldTween != null && oldTween.IsValid())
+            {
+                oldTween.Kill();
+            }
+            __instance.Scale = Vector2.One;
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[CommonUiButtonPatches] BackButton.OnUnfocus error: {ex.Message}");
         }
         return false;
     }

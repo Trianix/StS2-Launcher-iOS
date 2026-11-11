@@ -1187,6 +1187,29 @@ internal static partial class PlatformPatches
             }
         }
 
+        // Immediately ensure PatchNotesScreen is suppressed and hidden post-attach
+        try
+        {
+            var patchNotesScreen = mainMenu.PatchNotesScreen
+                ?? mainMenu.GetNodeOrNull<NPatchNotesScreen>("%PatchNotesScreen")
+                ?? mainMenu.FindChild("PatchNotesScreen", true, false) as NPatchNotesScreen;
+
+            if (patchNotesScreen != null)
+            {
+                patchNotesScreen.Visible = false;
+                HarmonyLib.Traverse.Create(patchNotesScreen).Property("IsOpen").SetValue(false);
+                patchNotesScreen.MouseFilter = Control.MouseFilterEnum.Ignore;
+                var color = patchNotesScreen.Modulate;
+                color.A = 0f;
+                patchNotesScreen.Modulate = color;
+                PatchHelper.Log("[LaunchMainMenu] Ensured PatchNotesScreen is suppressed and hidden post-attach.");
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[LaunchMainMenu] Suppress PatchNotesScreen post-attach warning: {ex.Message}");
+        }
+
         // Ensure transition overlay remains dismissed and does not obscure MainMenu
         if (game.Transition != null)
         {
@@ -1385,6 +1408,28 @@ internal static partial class PlatformPatches
             }
 
             return null; // Suppress the exception so Godot C# bridge does not fail
+        }
+
+        try
+        {
+            var patchNotesScreen = __instance.PatchNotesScreen
+                ?? __instance.GetNodeOrNull<NPatchNotesScreen>("%PatchNotesScreen")
+                ?? __instance.FindChild("PatchNotesScreen", true, false) as NPatchNotesScreen;
+
+            if (patchNotesScreen != null)
+            {
+                patchNotesScreen.Visible = false;
+                HarmonyLib.Traverse.Create(patchNotesScreen).Property("IsOpen").SetValue(false);
+                patchNotesScreen.MouseFilter = Control.MouseFilterEnum.Ignore;
+                var color = patchNotesScreen.Modulate;
+                color.A = 0f;
+                patchNotesScreen.Modulate = color;
+                PatchHelper.Log("[MainMenuReadyFinalizer] Ensured PatchNotesScreen is hidden post-_Ready.");
+            }
+        }
+        catch (Exception ex)
+        {
+            PatchHelper.Log($"[MainMenuReadyFinalizer] Hide PatchNotesScreen warning: {ex.Message}");
         }
 
         PatchHelper.Log("[MainMenuReadyFinalizer] NMainMenu._Ready completed successfully.");

@@ -29,7 +29,7 @@ internal static class PatchNotesScreenPatches
             harmony,
             typeof(NPatchNotesScreen),
             nameof(NPatchNotesScreen._Ready),
-            postfix: PatchHelper.Method(typeof(PatchNotesScreenPatches), nameof(ReadyPostfix))
+            prefix: PatchHelper.Method(typeof(PatchNotesScreenPatches), nameof(ReadyPrefix))
         );
         PatchHelper.Patch(
             harmony,
@@ -57,10 +57,145 @@ internal static class PatchNotesScreenPatches
         );
     }
 
-    private static void ReadyPostfix(NPatchNotesScreen __instance)
+    private static bool ReadyPrefix(NPatchNotesScreen __instance)
     {
         try
         {
+            var traverse = Traverse.Create(__instance);
+
+            // 1. Load scene for contents
+            try
+            {
+                var cachedScene = ResourceLoader.Load<PackedScene>(
+                    "res://scenes/screens/patch_screen_contents.tscn",
+                    null,
+                    ResourceLoader.CacheMode.Reuse
+                );
+                traverse.Field("_cachedScene").SetValue(cachedScene);
+                traverse.Method("CreateNewPatchEntry").GetValue();
+            }
+            catch (Exception ex)
+            {
+                PatchHelper.Log($"[PatchNotesScreenPatches] CreateNewPatchEntry warning: {ex.Message}");
+            }
+
+            // 2. Connect Prev / Next buttons safely
+            var prevButton = __instance.GetNodeOrNull<NButton>("PrevButton")
+                ?? __instance.FindChild("PrevButton", true, false) as NButton;
+            if (prevButton != null)
+            {
+                traverse.Field("_prevButton").SetValue(prevButton);
+                try
+                {
+                    prevButton.Connect(
+                        NClickableControl.SignalName.Released,
+                        Callable.From<NButton>(_ => InvokePreviousPatchNote(__instance))
+                    );
+                }
+                catch { }
+            }
+
+            var nextButton = __instance.GetNodeOrNull<NButton>("NextButton")
+                ?? __instance.FindChild("NextButton", true, false) as NButton;
+            if (nextButton != null)
+            {
+                traverse.Field("_nextButton").SetValue(nextButton);
+                try
+                {
+                    nextButton.Connect(
+                        NClickableControl.SignalName.Released,
+                        Callable.From<NButton>(_ => InvokeNextPatchNote(__instance))
+                    );
+                }
+                catch { }
+                nextButton.Visible = false;
+            }
+
+            // 3. Connect PatchNotesToggle safely (fall back gracefully if unique name % is unmapped)
+            var patchNotesToggle = __instance.GetNodeOrNull<NButton>("%PatchNotesToggle")
+                ?? __instance.GetNodeOrNull<NButton>("PatchNotesToggle")
+                ?? __instance.FindChild("PatchNotesToggle", true, false) as NButton;
+            if (patchNotesToggle != null)
+            {
+                traverse.Field("_patchNotesToggle").SetValue(patchNotesToggle);
+                try
+                {
+                    patchNotesToggle.Connect(
+                        NClickableControl.SignalName.Released,
+                        Callable.From<NButton>(_ => InvokeClose(__instance))
+                    );
+                    patchNotesToggle.Disable();
+                }
+                catch { }
+            }
+
+            // 4. Connect BackButton safely and hook both Released and GuiInput for instant mobile responsiveness
+            var backButton = __instance.GetNodeOrNull<NButton>("%BackButton")
+                ?? __instance.GetNodeOrNull<NButton>("BackButton")
+                ?? __instance.FindChild("BackButton", true, false) as NButton;
+            if (backButton != null)
+            {
+                traverse.Field("_backButton").SetValue(backButton);
+                try
+                {
+                    backButton.Connect(
+                        NClickableControl.SignalName.Released,
+                        Callable.From<NButton>(_ => InvokeClose(__instance))
+                    );
+                    backButton.Connect(
+                        Control.SignalName.GuiInput,
+                        Callable.From<InputEvent>(evt =>
+                        {
+                            if ((evt is InputEventMouseButton mb && !mb.Pressed && mb.ButtonIndex == MouseButton.Left) ||
+                                (evt is InputEventScreenTouch st && !st.Pressed))
+                            {
+                                InvokeClose(__instance);
+                            }
+                        })
+                    );
+                    PatchHelper.Log("[PatchNotesScreenPatches] Successfully connected _backButton to Close");
+                }
+                catch (Exception ex)
+                {
+                    PatchHelper.Log($"[PatchNotesScreenPatches] Connect _backButton warning: {ex.Message}");
+                }
+            }
+            else
+            {
+                PatchHelper.Log("[PatchNotesScreenPatches] WARNING: BackButton node not found on NPatchNotesScreen!");
+            }
+
+            // 5. Connect background tap-to-dismiss on GuiInput
+            try
+            {
+                __instance.Connect(
+                    Control.SignalName.GuiInput,
+                    Callable.From<InputEvent>(evt => OnGuiInput(__instance, evt))
+                );
+            }
+            catch { }
+
+            // 6. Replace the design-time placeholder "Errortember 00, 1982" with a valid clean notice
+            try
+            {
+                var dateLabel = traverse.Field<MegaLabel>("_dateLabel").Value;
+                if (dateLabel != null)
+                {
+                    dateLabel.SetTextAutoSize(
+                        DateTime.UtcNow.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture)
+                    );
+                }
+                var patchText = traverse.Field<MegaRichTextLabel>("_patchText").Value;
+                if (patchText != null)
+                {
+                    patchText.SetTextAutoSize(
+                        "[center]Slay the Spire 2 - Early Access Mobile Preview[/center]\n\nWelcome to the mobile port preview."
+                    );
+                }
+            }
+            catch { }
+
+            // 7. Ensure NPatchNotesScreen initializes in a completely hidden, non-blocking state
             SetIsOpen(__instance, false);
             __instance.Visible = false;
             __instance.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -69,17 +204,13 @@ internal static class PatchNotesScreenPatches
             color.A = 0f;
             __instance.Modulate = color;
 
-            __instance.Connect(
-                Control.SignalName.GuiInput,
-                Callable.From<InputEvent>(evt => OnGuiInput(__instance, evt))
-            );
-
-            PatchHelper.Log("[PatchNotesScreenPatches] NPatchNotesScreen initialized in hidden state with tap-to-dismiss hooked");
+            PatchHelper.Log("[PatchNotesScreenPatches] NPatchNotesScreen._Ready initialized successfully (hidden).");
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[PatchNotesScreenPatches] ReadyPostfix error: {ex.Message}");
+            PatchHelper.Log($"[PatchNotesScreenPatches] ReadyPrefix error: {ex}");
         }
+        return false; // Skip original method completely
     }
 
     private static void OnGuiInput(NPatchNotesScreen screen, InputEvent evt)
@@ -124,15 +255,20 @@ internal static class PatchNotesScreenPatches
 
             var traverse = Traverse.Create(__instance);
 
-            var patchNotesToggle = traverse.Field<NButton>("_patchNotesToggle").Value;
+            var patchNotesToggle = traverse.Field<NButton>("_patchNotesToggle").Value
+                ?? __instance.GetNodeOrNull<NButton>("%PatchNotesToggle")
+                ?? __instance.FindChild("PatchNotesToggle", true, false) as NButton;
             if (patchNotesToggle != null)
             {
                 patchNotesToggle.Enable();
             }
 
-            var backButton = traverse.Field<NButton>("_backButton").Value;
+            var backButton = traverse.Field<NButton>("_backButton").Value
+                ?? __instance.GetNodeOrNull<NButton>("%BackButton")
+                ?? __instance.FindChild("BackButton", true, false) as NButton;
             if (backButton != null)
             {
+                traverse.Field("_backButton").SetValue(backButton);
                 backButton.Enable();
                 backButton.Visible = true;
                 backButton.MouseFilter = Control.MouseFilterEnum.Stop;
@@ -241,10 +377,14 @@ internal static class PatchNotesScreenPatches
             }
 
             var traverse = Traverse.Create(__instance);
-            var patchNotesToggle = traverse.Field<NButton>("_patchNotesToggle").Value;
+            var patchNotesToggle = traverse.Field<NButton>("_patchNotesToggle").Value
+                ?? __instance.GetNodeOrNull<NButton>("%PatchNotesToggle")
+                ?? __instance.FindChild("PatchNotesToggle", true, false) as NButton;
             patchNotesToggle?.Disable();
 
-            var backButton = traverse.Field<NButton>("_backButton").Value;
+            var backButton = traverse.Field<NButton>("_backButton").Value
+                ?? __instance.GetNodeOrNull<NButton>("%BackButton")
+                ?? __instance.FindChild("BackButton", true, false) as NButton;
             backButton?.Disable();
 
             var game = NGame.Instance;

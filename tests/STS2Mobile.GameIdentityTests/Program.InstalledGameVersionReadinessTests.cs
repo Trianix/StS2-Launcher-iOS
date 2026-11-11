@@ -10,6 +10,24 @@ namespace STS2Mobile.GameIdentityTests;
 
 internal static partial class Program
 {
+    private static void InstalledVersionReadinessAcceptsRelocatedIosContainer()
+    {
+        const string oldDataDir = "/var/mobile/Containers/Data/Application/11111111-1111-1111-1111-111111111111/Library/Application Support/Godot/app_userdata/sts2";
+        const string currentDataDir = "/var/mobile/Containers/Data/Application/22222222-2222-2222-2222-222222222222/Library/Application Support/Godot/app_userdata/sts2";
+        True(
+            LauncherAndroidAppPrivatePath.MarkerPathMatchesExpectedPath(oldDataDir, currentDataDir, currentDataDir),
+            "A new iOS app-container UUID must not invalidate the public install slot."
+        );
+        True(
+            !LauncherAndroidAppPrivatePath.MarkerPathMatchesExpectedPath(
+                oldDataDir + "/game_versions/beta",
+                currentDataDir + "/game_versions/other",
+                currentDataDir
+            ),
+            "A relocated marker must still match the exact branch-relative install slot."
+        );
+    }
+
     private static void InstalledVersionReadinessAcceptsCurrentPreparation()
     {
         using var fixture = CreateReadinessFixture(

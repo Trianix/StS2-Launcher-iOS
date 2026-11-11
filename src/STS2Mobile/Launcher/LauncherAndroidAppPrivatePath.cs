@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace STS2Mobile.Launcher;
 
@@ -6,6 +7,8 @@ internal static class LauncherAndroidAppPrivatePath
 {
     private const string DataUserPrefix = "/data/user/0/";
     private const string DataDataPrefix = "/data/data/";
+    private const string IosContainerPrefix = "/var/mobile/Containers/Data/Application/";
+    private const string IosGodotUserDataSuffix = "/Library/Application Support/Godot/app_userdata/sts2";
 
     internal static string NormalizePath(string path)
         => string.IsNullOrWhiteSpace(path)
@@ -25,8 +28,9 @@ internal static class LauncherAndroidAppPrivatePath
             return true;
 
         var alternateExpected = AndroidAppPrivatePathAlias(expected, dataDir);
-        return !string.IsNullOrWhiteSpace(alternateExpected)
-            && string.Equals(marker, alternateExpected, StringComparison.OrdinalIgnoreCase);
+        return (!string.IsNullOrWhiteSpace(alternateExpected)
+                && string.Equals(marker, alternateExpected, StringComparison.OrdinalIgnoreCase))
+            || IosContainerRelocationMatches(marker, expected);
     }
 
     internal static bool PathMatchesOrLeftAliasMatches(string left, string right, string dataDir)
@@ -76,6 +80,33 @@ internal static class LauncherAndroidAppPrivatePath
         }
 
         return string.Empty;
+    }
+
+    private static bool IosContainerRelocationMatches(string marker, string expected)
+    {
+        if (!TryGetIosUserDataRelativePath(marker, out var markerRelative)
+            || !TryGetIosUserDataRelativePath(expected, out var expectedRelative))
+            return false;
+
+        return string.Equals(markerRelative, expectedRelative, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetIosUserDataRelativePath(string path, out string relativePath)
+    {
+        relativePath = string.Empty;
+        var suffixIndex = path.IndexOf(IosGodotUserDataSuffix, StringComparison.OrdinalIgnoreCase);
+        if (suffixIndex <= 0
+            || path.IndexOf(IosGodotUserDataSuffix, suffixIndex + IosGodotUserDataSuffix.Length,
+                StringComparison.OrdinalIgnoreCase) >= 0)
+            return false;
+
+        var containerPath = path.Substring(0, suffixIndex);
+        if (!containerPath.StartsWith(IosContainerPrefix, StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParseExact(containerPath.Substring(IosContainerPrefix.Length), "D", out _))
+            return false;
+
+        relativePath = path.Substring(suffixIndex + IosGodotUserDataSuffix.Length);
+        return !relativePath.Split('/').Any(segment => segment is "." or "..");
     }
 
     private static string AndroidAppPrivatePathAlias(

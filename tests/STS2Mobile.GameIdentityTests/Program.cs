@@ -191,6 +191,7 @@ internal static partial class Program
             ("issue 38 complete N to N+1 lifecycle", Issue38CompleteLifecycle),
             ("issue 38 mixed and corrupt packs fail closed", Issue38MixedAndCorruptPacksFailClosed),
             ("installed version readiness accepts current preparation", InstalledVersionReadinessAcceptsCurrentPreparation),
+            ("installed version readiness accepts relocated iOS container", InstalledVersionReadinessAcceptsRelocatedIosContainer),
             ("installed version readiness permits safe automatic repair", InstalledVersionReadinessPermitsSafeAutomaticRepair),
             ("installed version readiness rejects unknown preparation", InstalledVersionReadinessRejectsUnknownPreparation),
             ("installed version readiness rejects missing files", InstalledVersionReadinessRejectsMissingFiles),

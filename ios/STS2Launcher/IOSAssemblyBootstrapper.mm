@@ -30,7 +30,7 @@ static BOOL STS2CopyFileAtomicallyIfChanged(NSString *sourcePath, NSString *dest
                         backupItemName:nil
                                options:0
                       resultingItemURL:nil
-                                  error:error] != nil;
+                                  error:error];
     } else {
         succeeded = [fm moveItemAtPath:temporaryPath toPath:destinationPath error:error];
     }

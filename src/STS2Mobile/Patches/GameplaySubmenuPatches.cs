@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Reflection.Emit;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Nodes;
@@ -21,7 +18,6 @@ internal static class GameplaySubmenuPatches
     private static bool _cursorWaiting;
     internal static void Apply(Harmony harmony)
     {
-        ApplyDailyRunInitializerProbe(harmony);
         PatchHelper.Patch(harmony, typeof(NSingleplayerSubmenu), "OpenCharacterSelect",
             prefix: PatchHelper.Method(typeof(GameplaySubmenuPatches), nameof(OpenCharacterSelect)));
         PatchHelper.Patch(harmony, typeof(NSingleplayerSubmenu), "OpenCustomScreen",
@@ -42,63 +38,6 @@ internal static class GameplaySubmenuPatches
         // Original _Ready/InitializeSingleplayer now execute completely using
         // SceneBindingPatches. Do not swallow failures or force unlocks/act IDs.
     }
-
-    private static void ApplyDailyRunInitializerProbe(Harmony harmony)
-    {
-        try
-        {
-            var initializer = typeof(NDailyRunScreen).TypeInitializer;
-            if (initializer == null)
-            {
-                PatchHelper.Log("[DailyRunProbe] Static initializer not found.");
-                return;
-            }
-
-            harmony.Patch(initializer, transpiler: new HarmonyMethod(
-                typeof(GameplaySubmenuPatches), nameof(DailyRunInitializerTranspiler)));
-            PatchHelper.Log("[DailyRunProbe] Instrumented NDailyRunScreen static initializer checkpoints.");
-        }
-        catch (Exception ex)
-        {
-            PatchHelper.Log($"[DailyRunProbe] Could not instrument static initializer: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private static IEnumerable<CodeInstruction> DailyRunInitializerTranspiler(IEnumerable<CodeInstruction> instructions)
-    {
-        foreach (var instruction in instructions)
-        {
-            if (instruction.operand is MethodInfo calledMethod)
-            {
-                var owner = calledMethod.DeclaringType?.FullName ?? "<unknown>";
-                var name = calledMethod.Name;
-                var checkpoint = owner switch
-                {
-                    "MegaCrit.Sts2.Core.Helpers.SceneHelper" when name == "GetScenePath" => "before SceneHelper.GetScenePath",
-                    "MegaCrit.Sts2.Core.Localization.LocString" when name == ".ctor" => "before LocString constructor",
-                    "MegaCrit.Sts2.Core.Localization.LocManager" when name == "get_Instance" => "before LocManager.Instance",
-                    "MegaCrit.Sts2.Core.Localization.LocManager" when name == "GetTable" => "before LocManager.GetTable",
-                    "MegaCrit.Sts2.Core.Localization.LocTable" when name == "GetRawText" => "before LocTable.GetRawText",
-                    _ => null,
-                };
-                if (checkpoint != null)
-                {
-                    yield return new CodeInstruction(OpCodes.Ldstr, checkpoint);
-                    yield return new CodeInstruction(OpCodes.Call,
-                        AccessTools.Method(typeof(GameplaySubmenuPatches), nameof(LogDailyRunInitializerCheckpoint)));
-                }
-            }
-
-            yield return instruction;
-        }
-
-        yield return new CodeInstruction(OpCodes.Ldstr, "initializer completed");
-        yield return new CodeInstruction(OpCodes.Call,
-            AccessTools.Method(typeof(GameplaySubmenuPatches), nameof(LogDailyRunInitializerCheckpoint)));
-    }
-
-    private static void LogDailyRunInitializerCheckpoint(string checkpoint)
-        => PatchHelper.Log("[DailyRunProbe] " + checkpoint + ".");
 
     private static bool RemoteCursorInput(NRemoteMouseCursorContainer __instance, InputEvent __0)
     {

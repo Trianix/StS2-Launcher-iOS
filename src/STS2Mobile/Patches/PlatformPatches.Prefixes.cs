@@ -387,49 +387,23 @@ internal static partial class PlatformPatches
     {
         try
         {
-            PatchHelper.Log("[LocManager.Initialize] Initializing LocManager instance...");
-            var locManager = new LocManager();
-
-            var prop = typeof(LocManager).GetProperty(
-                "Instance",
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static
-            );
-            if (prop != null)
+            var path = Godot.ProjectSettings.GlobalizePath("user://localization_override");
+            if (!string.IsNullOrEmpty(path) && !Godot.DirAccess.DirExistsAbsolute(path))
             {
-                prop.SetValue(null, locManager);
+                var err = Godot.DirAccess.MakeDirAbsolute(path);
+                PatchHelper.Log($"[LocManager.Initialize] Prepared localization override directory '{path}': {err}");
             }
-            else
-            {
-                var field = typeof(LocManager).GetField(
-                    "<Instance>k__BackingField",
-                    BindingFlags.NonPublic | BindingFlags.Static
-                );
-                field?.SetValue(null, locManager);
-            }
-
-            try
-            {
-                string path = Godot.ProjectSettings.GlobalizePath("user://localization_override");
-                if (!string.IsNullOrEmpty(path) && !Godot.DirAccess.DirExistsAbsolute(path))
-                {
-                    var err = Godot.DirAccess.MakeDirAbsolute(path);
-                    PatchHelper.Log($"[LocManager.Initialize] MakeDirAbsolute('{path}') returned {err}");
-                }
-            }
-            catch (Exception ex)
-            {
-                PatchHelper.Log($"[LocManager.Initialize] Directory check safe ignore: {ex.Message}");
-            }
-
-            PatchHelper.Log("[LocManager.Initialize] Completed successfully.");
         }
         catch (Exception ex)
         {
-            PatchHelper.Log($"[LocManager.Initialize] FATAL: Failed to initialize LocManager: {ex}");
-            throw;
+            PatchHelper.Log($"[LocManager.Initialize] Override directory preparation failed safely: {ex.Message}");
         }
 
-        return false; // Skip original method
+        // The original initializer loads locale tables. Replacing it with a
+        // bare LocManager instance leaves GetTable("main_menu_ui") null, which
+        // makes NDailyRunScreen's static date-format initialization fail.
+        PatchHelper.Log("[LocManager.Initialize] Continuing with the game initializer to load locale tables.");
+        return true;
     }
 
     [DllImport("__Internal", EntryPoint = "sts2_reinstall_crash_handlers")]

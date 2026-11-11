@@ -188,17 +188,19 @@ internal static partial class Program
             Directory.CreateDirectory(_directory);
             try
             {
-                File.Copy(_source, _assemblyPath);
-                if (mutate != null)
+                using (var resolver = new DefaultAssemblyResolver())
                 {
-                    using var resolver = new DefaultAssemblyResolver();
                     foreach (var directory in _probeDirectories) resolver.AddSearchDirectory(directory);
-                    using var input = new MemoryStream(File.ReadAllBytes(_assemblyPath));
-                    using var module = ModuleDefinition.ReadModule(input, new ReaderParameters
+                    using var module = ModuleDefinition.ReadModule(_source, new ReaderParameters
                     {
                         AssemblyResolver = resolver, InMemory = true, ReadingMode = ReadingMode.Immediate,
                     });
-                    mutate(module.GetType(SessionTypeName), module);
+                    if (mutate != null) mutate(module.GetType(SessionTypeName), module);
+                    // These fixtures only inspect metadata. Make the copy
+                    // loadable by the x64 desktop test host even though the
+                    // checked-in reference carries the iOS ARM64 machine flag.
+                    module.Architecture = TargetArchitecture.I386;
+                    module.Attributes = ModuleAttributes.ILOnly;
                     module.Write(_assemblyPath);
                 }
             }

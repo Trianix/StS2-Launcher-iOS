@@ -12,6 +12,7 @@ internal static partial class Program
         ResolveEventHandler resolver = (sender, resolveArgs) =>
         {
             var name = new AssemblyName(resolveArgs.Name).Name;
+            if (name == "sts2") return LoadDesktopCompatibleGameReference();
             string[] candidatePaths =
             {
                 Path.Combine("upstream", "godot-export", ".godot", "mono", "publish", "arm64", name + ".dll"),

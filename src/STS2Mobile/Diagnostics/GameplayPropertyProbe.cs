@@ -27,6 +27,8 @@ internal static class GameplayPropertyProbe
         try
         {
             host.AddChild(scratch);
+            GameplayDiagnostics.Result("custom-export-property", "blocked",
+                "Requires a CSharpScript-backed scene instance; this mod-side probe constructs managed controls directly.");
             foreach (var factory in new Func<Control>[] { () => new Control(), () => new GameplayProbeControl(),
                 () => new NBackButton(), () => new NConfirmButton(), () => new NAscensionPanel() })
             {
@@ -180,22 +182,6 @@ internal static class GameplayPropertyProbe
             catch (Exception ex) { GameplayDiagnostics.Failure(label + ":tween-cancel", ex); }
             finally { if (cancelledTween != null && cancelledTween.IsValid()) cancelledTween.Kill(); }
 
-            if (target is GameplayProbeControl custom)
-            {
-                Check(label + ":custom-property-read", () =>
-                {
-                    var value = custom.Get(GameplayProbeControl.ProbePropertyName);
-                    Require(value.VariantType == Variant.Type.Vector2 && value.AsVector2().IsEqualApprox(custom.ProbeExportedVector),
-                        $"Custom property read mismatch: generic={Describe(value)}, typed={custom.ProbeExportedVector}.");
-                });
-                Check(label + ":custom-property-write", () =>
-                {
-                    var expected = new Vector2(91, 37);
-                    custom.Set(GameplayProbeControl.ProbePropertyName, expected);
-                    Require(custom.ProbeExportedVector.IsEqualApprox(expected),
-                        $"Custom property write mismatch: expected={expected}, typed-after={custom.ProbeExportedVector}.");
-                });
-            }
         }
         finally { target.Position = originalPosition; target.Scale = originalScale; target.Modulate = originalColor; }
     }
@@ -223,29 +209,4 @@ internal static class GameplayPropertyProbe
 
 internal partial class GameplayProbeControl : Control
 {
-    internal const string ProbePropertyName = "probe_exported_vector";
-
-    public Vector2 ProbeExportedVector { get; set; } = new(3, 7);
-
-    public override Godot.Collections.Array<Godot.Collections.Dictionary> _GetPropertyList()
-    {
-        var properties = base._GetPropertyList();
-        properties.Add(new Godot.Collections.Dictionary
-        {
-            ["name"] = ProbePropertyName,
-            ["type"] = (int)Variant.Type.Vector2,
-            ["usage"] = (int)(PropertyUsageFlags.Default | PropertyUsageFlags.ScriptVariable)
-        });
-        return properties;
-    }
-
-    public override Variant _Get(StringName property)
-        => property == ProbePropertyName ? Variant.From(ProbeExportedVector) : base._Get(property);
-
-    public override bool _Set(StringName property, Variant value)
-    {
-        if (property != ProbePropertyName) return base._Set(property, value);
-        ProbeExportedVector = value.AsVector2();
-        return true;
-    }
 }

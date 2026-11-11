@@ -15,7 +15,7 @@ internal static class GameplayDiagnosticsPatches
             prefix: new HarmonyMethod(typeof(GameplayDiagnosticsPatches), nameof(EnteringGame)));
         harmony.Patch(AccessTools.PropertyGetter(typeof(NGame), "DebugSeedOverride"),
             prefix: new HarmonyMethod(typeof(GameplayDiagnosticsPatches), nameof(TestSeed)));
-        var selected = new[] { "NMainMenu", "NSingleplayerSubmenu", "NCharacterSelectScreen", "NCustomRunScreen", "NDailyRunScreen",
+        var selected = new[] { "NMainMenu", "NSingleplayerSubmenu", "NCharacterSelectScreen", "NCustomRunScreen",
             "NRun", "NGlobalUi", "NCombatRoom", "NMapScreen", "NRewardsScreen", "NMerchantRoom", "NRestSiteRoom", "NEventRoom" };
         foreach (var type in typeof(NGame).Assembly.GetTypes().Where(t => selected.Contains(t.Name)))
             foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly)

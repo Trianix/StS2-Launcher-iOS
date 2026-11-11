@@ -225,63 +225,6 @@ internal static partial class PlatformPatches
         }
     }
 
-    private static void ApplyDailyRunInitializerDependencyProbes(Harmony harmony)
-    {
-        try
-        {
-            var assembly = typeof(NGame).Assembly;
-            var locManager = assembly.GetType("MegaCrit.Sts2.Core.Localization.LocManager");
-            var locTable = assembly.GetType("MegaCrit.Sts2.Core.Localization.LocTable");
-            var sceneHelper = assembly.GetType("MegaCrit.Sts2.Core.Helpers.SceneHelper");
-            var targets = new[]
-            {
-                (locManager?.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static)?.GetMethod,
-                    nameof(DailyRunInstancePostfix)),
-                (locManager?.GetMethod("GetTable", BindingFlags.Public | BindingFlags.Instance),
-                    nameof(DailyRunGetTablePostfix)),
-                (locTable?.GetMethod("GetRawText", BindingFlags.Public | BindingFlags.Instance),
-                    nameof(DailyRunGetRawTextPostfix)),
-                (sceneHelper?.GetMethod("GetScenePath", BindingFlags.Public | BindingFlags.Static),
-                    nameof(DailyRunGetScenePathPostfix)),
-            };
-            var patched = 0;
-            foreach (var (target, postfixName) in targets)
-            {
-                if (target == null) continue;
-                harmony.Patch(target, postfix: new HarmonyMethod(Prefix(postfixName)));
-                patched++;
-            }
-            PatchHelper.Log($"[DailyRunProbe] Installed dependency result probes: {patched}/4.");
-        }
-        catch (Exception ex)
-        {
-            PatchHelper.Log($"[DailyRunProbe] Dependency probe setup failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
-    private static void DailyRunInstancePostfix(object __result)
-    {
-        if (__result == null) PatchHelper.Log("[DailyRunProbe] LocManager.Instance returned null.");
-    }
-
-    private static void DailyRunGetTablePostfix(string __0, object __result)
-    {
-        if (__0 == "main_menu_ui")
-            PatchHelper.Log($"[DailyRunProbe] GetTable(main_menu_ui) returned {(__result == null ? "null" : __result.GetType().Name)}.");
-    }
-
-    private static void DailyRunGetRawTextPostfix(object __instance, string __0, string __result)
-    {
-        if (__0 is "DAILY_RUN_MENU.DATE_FORMAT" or "DAILY_RUN_MENU.TIME_FORMAT")
-            PatchHelper.Log($"[DailyRunProbe] GetRawText({__0}) returned {(__result == null ? "null" : "a value")} from {(__instance == null ? "null table" : __instance.GetType().Name)}.");
-    }
-
-    private static void DailyRunGetScenePathPostfix(string __0, string __result)
-    {
-        if (__0 == "screens/daily_run/daily_run_screen")
-            PatchHelper.Log($"[DailyRunProbe] GetScenePath returned {(__result == null ? "null" : __result)}.");
-    }
-
     private static void ApplyOneTimeInitializationExecuteEssentialPatch(Harmony harmony)
     {
         try

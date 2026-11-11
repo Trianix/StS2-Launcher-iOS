@@ -27,7 +27,6 @@ internal static class SceneBindingPatches
             "MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NAscensionPanel",
             "MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NActDropdown",
             "MegaCrit.Sts2.Core.Nodes.Screens.CustomRun.NCustomRunScreen",
-            "MegaCrit.Sts2.Core.Nodes.Screens.DailyRun.NDailyRunScreen",
             "MegaCrit.Sts2.Core.Nodes.Rooms.NCombatRoom",
             "MegaCrit.Sts2.Core.Nodes.Rooms.NEventRoom",
             "MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom",

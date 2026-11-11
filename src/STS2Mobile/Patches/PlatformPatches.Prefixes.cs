@@ -406,47 +406,6 @@ internal static partial class PlatformPatches
         return true;
     }
 
-    private static void LogMainMenuLocalizationReadiness()
-    {
-        try
-        {
-            var manager = LocManager.Instance;
-            if (manager == null)
-            {
-                PatchHelper.Log("[LocProbe] LocManager.Instance is null before main-menu preload.");
-                return;
-            }
-
-            var tablesField = typeof(LocManager).GetField("_tables", BindingFlags.Instance | BindingFlags.NonPublic);
-            var tables = tablesField?.GetValue(manager) as System.Collections.IDictionary;
-            var table = manager.GetTable("main_menu_ui");
-            var entriesField = table?.GetType().GetField("_translations", BindingFlags.Instance | BindingFlags.NonPublic);
-            var entries = entriesField?.GetValue(table) as System.Collections.IDictionary;
-            var fallbackField = table?.GetType().GetField("_fallback", BindingFlags.Instance | BindingFlags.NonPublic);
-            var fallback = fallbackField?.GetValue(table);
-            PatchHelper.Log($"[LocProbe] language={manager.Language ?? "<null>"}; tables={tables?.Count.ToString() ?? "<null>"}; main_menu_ui=present; entries={entries?.Count.ToString() ?? "<null>"}; fallback={(fallback == null ? "none" : fallback.GetType().Name)}");
-            LogLocalizationEntry(table, "DAILY_RUN_MENU.DATE_FORMAT");
-            LogLocalizationEntry(table, "DAILY_RUN_MENU.TIME_FORMAT");
-        }
-        catch (Exception ex)
-        {
-            PatchHelper.Log($"[LocProbe] Localization readiness check failed: {ex}");
-        }
-    }
-
-    private static void LogLocalizationEntry(LocTable table, string key)
-    {
-        try
-        {
-            var value = table.GetRawText(key);
-            PatchHelper.Log($"[LocProbe] {key}={(value == null ? "<null>" : "present")}");
-        }
-        catch (Exception ex)
-        {
-            PatchHelper.Log($"[LocProbe] {key} lookup failed: {ex.GetType().Name}: {ex.Message}");
-        }
-    }
-
     [DllImport("__Internal", EntryPoint = "sts2_reinstall_crash_handlers")]
     private static extern void ReinstallNativeCrashHandlers();
 
@@ -1119,7 +1078,6 @@ internal static partial class PlatformPatches
 
         // 4. Preload main menu essentials
         PatchHelper.Log("[LaunchMainMenu] Preloading MainMenuEssentials...");
-        LogMainMenuLocalizationReadiness();
         try
         {
             var preloadTask = PreloadManager.LoadMainMenuEssentials();

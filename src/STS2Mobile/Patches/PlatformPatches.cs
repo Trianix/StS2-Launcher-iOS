@@ -97,7 +97,6 @@ internal static partial class PlatformPatches
         ApplyLoadLocFormattersPatch(harmony);
         ApplyLoadLocCompletionFilePatch(harmony);
         ApplyLocManagerInitializePatch(harmony);
-        ApplyDailyRunInitializerDependencyProbes(harmony);
         ApplyOneTimeInitializationExecuteEssentialPatch(harmony);
         ApplyOneTimeInitializationPrewarmJitPatch(harmony);
         ApplyModelDbInitPatch(harmony);

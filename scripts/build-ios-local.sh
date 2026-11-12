@@ -19,6 +19,7 @@ DEPS_CACHE_DIR="$ROOT/tmp/ios-deps"
 IOS_BCL_ASSETS_DIR="$IOS_DIR/assets/dotnet_bcl"
 IOS_BUNDLE_BCL_DIR="$IOS_DIR/STS2Launcher/dotnet_bcl"
 IOS_FRAMEWORKS_DIR="$IOS_DIR/STS2Launcher/Frameworks"
+GODOT_SOURCE_DIR="${GODOT_DIR:-$ROOT/vendor/godot}"
 
 mkdir -p "$UPSTREAM_PUBLISH_DIR" "$DEPS_CACHE_DIR" "$IOS_BCL_ASSETS_DIR" "$IOS_BUNDLE_BCL_DIR" "$IOS_FRAMEWORKS_DIR"
 rm -f "$IOS_BCL_ASSETS_DIR/"*.dll
@@ -45,10 +46,22 @@ fi
 
 # Copy only necessary reference assemblies from ref-apk, avoiding Android BCL contamination
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$UPSTREAM_PUBLISH_DIR/"
-cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$UPSTREAM_PUBLISH_DIR/"
+GODOTSHARP_SOURCE="$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll"
+if [ -f "$GODOT_SOURCE_DIR/bin/GodotSharp/Api/Release/GodotSharp.dll" ]; then
+    GODOTSHARP_SOURCE="$GODOT_SOURCE_DIR/bin/GodotSharp/Api/Release/GodotSharp.dll"
+elif [ "${STS2_REQUIRE_PATCHED_GODOTSHARP:-0}" = "1" ]; then
+    echo "ERROR: Patched GodotSharp assembly is required but was not built"
+    exit 1
+fi
+if [ "${STS2_REQUIRE_PATCHED_GODOTSHARP:-0}" = "1" ] && ! grep -aFq '[STS2ManagedPropertyTrace]' "$GODOTSHARP_SOURCE"; then
+    echo "ERROR: Staged GodotSharp assembly is missing the managed property trace marker"
+    exit 1
+fi
+echo "Staging GodotSharp from $GODOTSHARP_SOURCE"
+cp -f "$GODOTSHARP_SOURCE" "$UPSTREAM_PUBLISH_DIR/GodotSharp.dll"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$UPSTREAM_PUBLISH_DIR/" 2>/dev/null || true
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/0Harmony.dll" "$IOS_BCL_ASSETS_DIR/"
-cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/GodotSharp.dll" "$IOS_BCL_ASSETS_DIR/"
+cp -f "$GODOTSHARP_SOURCE" "$IOS_BCL_ASSETS_DIR/GodotSharp.dll"
 cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/MonoMod."*.dll "$IOS_BCL_ASSETS_DIR/" 2>/dev/null || true
 if [ -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" ]; then
     cp -f "$REF_EXTRACT_DIR/assets/dotnet_bcl/System.Runtime.CompilerServices.Unsafe.dll" "$UPSTREAM_PUBLISH_DIR/"

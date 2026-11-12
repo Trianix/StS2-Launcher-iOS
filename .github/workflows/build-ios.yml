@@ -74,7 +74,9 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -106,7 +108,6 @@ jobs:
           key: ios-godot-v2-${{ steps.toolchain.outputs.id }}-${{ hashFiles('scripts/build-godot-ios.sh', 'scripts/setup-godot-source.sh', 'scripts/godot-source-utils.sh', 'scripts/requirements-godot-build.txt', 'scripts/ios-native-fingerprint.py', 'patches/godot/**') }}
 
       - name: Install SCons & Ninja
-        if: steps.cache-godot-lib.outputs.cache-hit != 'true' || steps.cache-mono-lib.outputs.cache-hit != 'true'
         run: |
           python3 -m pip install --upgrade pip
           pip install scons ninja
@@ -116,7 +117,6 @@ jobs:
           chmod +x scripts/*.sh
 
       - name: Setup Godot Source
-        if: steps.cache-godot-lib.outputs.cache-hit != 'true'
         run: |
           ./scripts/setup-godot-source.sh
 
@@ -137,6 +137,10 @@ jobs:
         run: |
           ./scripts/build-godot-ios.sh
 
+      - name: Build patched GodotSharp API
+        run: |
+          ./scripts/build-godotsharp-ios.sh
+
       - name: Save Godot iOS Library to Cache
         if: steps.cache-godot-lib.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -148,6 +152,7 @@ jobs:
         run: |
           VERSION_NAME="${{ github.event.inputs.version_name || '0.2.436' }}"
           VERSION_CODE="${{ github.event.inputs.version_code || '436009' }}"
+          export STS2_REQUIRE_PATCHED_GODOTSHARP=1
           ./scripts/build-ios-local.sh "$VERSION_NAME" "$VERSION_CODE"
 
       - name: Upload IPA Artifact

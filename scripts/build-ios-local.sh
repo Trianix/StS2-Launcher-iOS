@@ -53,7 +53,7 @@ elif [ "${STS2_REQUIRE_PATCHED_GODOTSHARP:-0}" = "1" ]; then
     echo "ERROR: Patched GodotSharp assembly is required but was not built"
     exit 1
 fi
-if [ "${STS2_REQUIRE_PATCHED_GODOTSHARP:-0}" = "1" ] && ! grep -aFq '[STS2ManagedPropertyTrace]' "$GODOTSHARP_SOURCE"; then
+if [ "${STS2_REQUIRE_PATCHED_GODOTSHARP:-0}" = "1" ] && ! python3 -c 'import pathlib, sys; marker = "[STS2ManagedPropertyTrace]".encode("utf-16le"); sys.exit(0 if marker in pathlib.Path(sys.argv[1]).read_bytes() else 1)' "$GODOTSHARP_SOURCE"; then
     echo "ERROR: Staged GodotSharp assembly is missing the managed property trace marker"
     exit 1
 fi

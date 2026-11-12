@@ -54,7 +54,7 @@ if [ ! -f "$godotsharp" ]; then
     echo "ERROR: Patched GodotSharp assembly was not produced at $godotsharp"
     exit 1
 fi
-if ! grep -aFq '[STS2ManagedPropertyTrace]' "$godotsharp"; then
+if ! python3 -c 'import pathlib, sys; marker = "[STS2ManagedPropertyTrace]".encode("utf-16le"); sys.exit(0 if marker in pathlib.Path(sys.argv[1]).read_bytes() else 1)' "$godotsharp"; then
     echo "ERROR: Built GodotSharp assembly does not contain the managed property trace marker"
     exit 1
 fi

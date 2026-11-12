@@ -1,10 +1,30 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace STS2Mobile.Diagnostics;
 
 internal static class RuntimeNativeScalarProbe
 {
+    private enum ByteBoolean : byte { False, True }
+    [DllImport("__Internal", EntryPoint = "sts2_probe_return_register_v1")]
+    private static extern ulong ReturnRegister(IntPtr callback, ulong value);
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static sbyte SignedByte(ulong value) => unchecked((sbyte)value);
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static byte UnsignedByte(ulong value) => unchecked((byte)value);
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static short SignedShort(ulong value) => unchecked((short)value);
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static ushort UnsignedShort(ulong value) => unchecked((ushort)value);
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static ByteBoolean BooleanEnum(ulong value) => (ByteBoolean)(value & 1);
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static ulong WideInteger(ulong value) => value;
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static IntPtr WidePointer(ulong value) => unchecked((IntPtr)(long)value);
+
     [StructLayout(LayoutKind.Sequential)] private struct Pair { public float X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct Large { public double X, Y, Z; public long Tag; }
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate byte ByteCallback(int value);
@@ -29,6 +49,7 @@ internal static class RuntimeNativeScalarProbe
             GameplayDiagnostics.Result("native-scalars:platform", "blocked", "Requires the physical iOS host.");
             return;
         }
+        RunReturnRegisters();
         Test("byte-false-true", () =>
         {
             ByteCallback callback = value => (byte)(value & 1);
@@ -66,6 +87,48 @@ internal static class RuntimeNativeScalarProbe
         {
             if (status == "failed") GameplayDiagnostics.Failure(name, new InvalidOperationException(detail));
             else GameplayDiagnostics.Result(name, status, detail);
+        });
+    }
+
+    private static unsafe void RunReturnRegisters()
+    {
+        CheckNarrow("uco-signed-byte", (IntPtr)(delegate* unmanaged[Cdecl]<ulong, sbyte>)&SignedByte,
+            new uint[] { 0, 1, 127, 0xffffff80, 0xffffffff }, 0xff);
+        CheckNarrow("uco-unsigned-byte", (IntPtr)(delegate* unmanaged[Cdecl]<ulong, byte>)&UnsignedByte,
+            new uint[] { 0, 1, 127, 128, 255 }, 0xff);
+        CheckNarrow("uco-signed-short", (IntPtr)(delegate* unmanaged[Cdecl]<ulong, short>)&SignedShort,
+            new uint[] { 0, 1, 32767, 0xffff8000, 0xffffffff }, 0xffff);
+        CheckNarrow("uco-unsigned-short", (IntPtr)(delegate* unmanaged[Cdecl]<ulong, ushort>)&UnsignedShort,
+            new uint[] { 0, 1, 32767, 32768, 65535 }, 0xffff);
+        CheckNarrow("uco-byte-enum-false-true", (IntPtr)(delegate* unmanaged[Cdecl]<ulong, ByteBoolean>)&BooleanEnum,
+            new uint[] { 0, 1 }, 0xff);
+        Test("uco-full-width-preservation", () =>
+        {
+            const ulong poison = 0x123456789abcde00;
+            RuntimeInvestigation.Require(ReturnRegister((IntPtr)(delegate* unmanaged[Cdecl]<ulong, ulong>)&WideInteger, poison) == poison,
+                "64-bit return was truncated");
+            RuntimeInvestigation.Require(ReturnRegister((IntPtr)(delegate* unmanaged[Cdecl]<ulong, IntPtr>)&WidePointer, poison) == poison,
+                "Pointer return was truncated");
+        });
+    }
+
+    private static void CheckNarrow(string name, IntPtr callback, uint[] expectedValues, uint mask)
+    {
+        Test(name, () =>
+        {
+            // Deliberately retain nonzero argument bits above the result width.
+            // Checking only the low byte hid this failure in the initial probe.
+            for (var iteration = 0; iteration < 8; iteration++)
+            {
+                if (iteration % 2 == 0) { GC.Collect(); GC.WaitForPendingFinalizers(); }
+                foreach (var expected in expectedValues)
+                {
+                    var input = (0x123456789abcde00UL & ~(ulong)mask) | (expected & mask);
+                    var raw = ReturnRegister(callback, input);
+                    RuntimeInvestigation.Require((uint)raw == expected,
+                        $"input=0x{input:X16}, x0=0x{raw:X16}, expected w0=0x{expected:X8}, iteration={iteration}");
+                }
+            }
         });
     }
 

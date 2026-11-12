@@ -1,9 +1,10 @@
 # Consolidated iOS runtime investigation
 
-This candidate investigates the shared Godot/Mono boundary before more gameplay
-changes. It does not claim the iOS port is fixed. The native property callbacks
-retain their existing behavior; the diagnostic API measures the live callback
-table and its raw byte returns independently.
+This candidate repairs narrow integer returns in the iOS ARM64 Mono interpreter,
+following the `20261112-093204-1e633319` device investigation. It reruns the same
+consolidated investigation before more gameplay changes. It does not claim the
+iOS port is qualified. The repair is in Mono's shared return packing; the Godot
+property callbacks retain their existing behavior.
 
 ## On the iPhone
 
@@ -43,10 +44,11 @@ it. Other exceptions remain failures. The screen can pause briefly during GC tes
 | --- | --- |
 | Do every native/managed callback field and their order agree in pinned source? | Embedded `godotCallbackContract` declaration audit. |
 | Does the live device table match the managed registration, sizes and offsets? | `callback:layout` and `callback:layout-evidence`. |
-| Do actual Get/Set callbacks return canonical 0/1 for handled and unhandled properties? | `callback:get:*`, `callback:set:*`, `[STS2CallbackAudit]` raw bytes and full x0 register. A handled Nil export is distinct from an unhandled property. |
+| Do actual Get/Set callbacks return canonical 0/1 for handled and unhandled properties? | `callback:get:*`, `callback:set:*`, `[STS2CallbackAudit]` raw bytes and full x0 register. Assertions now require zero extension through w0 (low 32 bits), rather than just the low byte. A handled Nil export is distinct from an unhandled property. |
 | Do native-property fallback, indexed access, interpolation, callbacks, Finished awaiting and cancellation work across controls? | `runtime:properties` and `scene:RuntimeProbeFixture:*`. |
 | Do generated exports, scene serialization, ownership, unique names and lifecycle work without the game PCK? | `scene:*` and `runtime:packaged-scene`. |
 | Do byte, signed integer, floating point, HFA/mixed structs, pointers, contained exceptions and GC survive the native boundary? | `runtime:native-scalars`. |
+| Does the repair cover signed/unsigned bytes and shorts and the byte enum used for booleans, without truncating full-width returns? | `native-scalars:uco-*` calls real UnmanagedCallersOnly entries with deliberately contaminated argument registers and repeated GC; it inspects raw returns before a typed C caller can mask them. |
 | Do Harmony prefixes, postfixes, transpilers, replacement, reverse patches, unpatching, generics, cached callers, exceptions and GC behave correctly? | `runtime:harmony`, individual fixture assertions and cleanup results. Patch installation alone cannot pass. |
 
 The idle measurement records frame intervals, allocations, GC, managed memory,
@@ -56,11 +58,17 @@ equivalence, and sustained combat remain visibly incomplete.
 
 ## Review checkpoint
 
-Review this consolidated bundle before selecting another repair. Repair only a
-demonstrated shared fault, then rerun this whole set. If the boundary remains
-unexplained, produce the runtime feasibility decision required by `PLAN.md` before
-adding gameplay patches. Once correctness is qualified, measure representative
-combat promptly; expanding full gameplay coverage depends on that result.
+The previous bundle established the return-register discrepancy; this is the
+shared repair and verification round. All five core runtime groups must pass,
+including generic/indexed inherited properties and the tween cases on every
+control and the packaged fixture. The idle frame measurement remains separate
+from combat qualification, and release qualification remains incomplete.
+
+If the repair does not clear that boundary, review the complete evidence and the
+runtime feasibility checkpoint in `PLAN.md` before adding further patches. Once
+correctness is qualified, verify the top-bar/real-scene regressions and measure
+representative combat promptly; expanding full gameplay coverage depends on that
+result. No additional normal gameplay test is needed for this investigation ZIP.
 
 ## Desktop preflight
 

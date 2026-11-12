@@ -59,7 +59,7 @@ def verify(ipa):
             raise ValueError("Bootstrap PCK copies disagree")
         executable = read("STS2Launcher")
         for symbol in (b"sts2_ios_callback_layout_v1", b"sts2_ios_callback_get_v1", b"sts2_ios_callback_set_v1",
-                       b"sts2_probe_byte_v1", b"sts2_probe_large_v1", b"sts2_probe_thermal_v1"):
+                       b"sts2_probe_byte_v1", b"sts2_probe_return_register_v1", b"sts2_probe_large_v1", b"sts2_probe_thermal_v1"):
             if symbol not in executable:
                 raise ValueError("Native investigation export missing: " + symbol.decode())
     print("Investigation IPA contents verified: " + str(ipa))

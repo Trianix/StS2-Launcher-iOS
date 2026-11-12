@@ -27,7 +27,7 @@ class RuntimeManifestTests(unittest.TestCase):
             (frameworks / "libsample.framework/libsample").write_bytes(b"framework")
             (root / "bootstrap.pck").write_bytes(b"pck")
             recipe.write_text(json.dumps({"version": "9.0.7", "commit": "pinned-commit"}))
-            for relative in ("patches/mono/android-net9.patch", "patches/godot/sts2-android-runtime.patch",
+            for relative in ("patches/mono/android-net9.patch", "patches/mono/ios-arm64-interpreter-returns.patch", "patches/godot/sts2-android-runtime.patch",
                              "scripts/build-godot-ios.sh", "scripts/build-ios-mono.sh", "scripts/ios-native-fingerprint.py"):
                 (root / relative).write_text(relative)
             (bcl / "GodotSharp.dll").write_bytes(b"godotsharp")
@@ -42,6 +42,7 @@ class RuntimeManifestTests(unittest.TestCase):
             self.assertEqual("revision", manifest["sourceRevision"])
             self.assertTrue(manifest["sourceTreeDirty"])
             self.assertEqual("pinned-commit", manifest["monoSourceCommit"])
+            self.assertEqual(module.sha256(root / "patches/mono/ios-arm64-interpreter-returns.patch"), manifest["files"]["monoIosReturnPatch"])
             self.assertEqual(module.sha256(native / "libgodot.ios.template_release.arm64.a"), manifest["files"]["godotArchive"])
             self.assertEqual(module.sha256(bcl / "GodotSharp.dll"), manifest["assemblies"]["dotnet_bcl/GodotSharp.dll"])
             self.assertEqual(module.sha256(assemblies / "STS2Mobile.dll"), manifest["assemblies"]["assemblies/STS2Mobile.dll"])

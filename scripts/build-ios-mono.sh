@@ -4,12 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RECIPE_PATH="$ROOT/patches/mono/runtime.json"
 PATCH_PATH="$ROOT/patches/mono/android-net9.patch"
+IOS_PATCH_PATH="$ROOT/patches/mono/ios-arm64-interpreter-returns.patch"
 IOS_LIBS="$ROOT/ios/libs"
 CACHE_DIR="$ROOT/tmp/ios-mono"
 # A changed patch must never reuse an already-patched source tree.
 COMMIT="3c298d9f00936d651cc47d221762474e25277672"
 ARCHIVE_URL="https://codeload.github.com/dotnet/runtime/tar.gz/$COMMIT"
-PATCH_ID="$(shasum -a 256 "$PATCH_PATH" | cut -c1-16)"
+PATCH_ID="$(cat "$PATCH_PATH" "$IOS_PATCH_PATH" | shasum -a 256 | cut -c1-16)"
 SOURCE_DIR="$CACHE_DIR/source-$COMMIT-$PATCH_ID"
 BUILD_DIR="$CACHE_DIR/build-arm64-$COMMIT-$PATCH_ID"
 
@@ -35,7 +36,11 @@ if [ ! -d "$SOURCE_DIR/.git" ]; then
     git -C "$SOURCE_DIR" config core.autocrlf false
     git -C "$SOURCE_DIR" add -f -- .
     git -C "$SOURCE_DIR" apply "$PATCH_PATH"
+    git -C "$SOURCE_DIR" apply "$IOS_PATCH_PATH"
 fi
+
+# Exercise the actual patched return-packing function before the expensive build.
+python3 "$ROOT/scripts/test-ios-mono-returns.py" --source "$SOURCE_DIR/src/mono/mono/mini/mini-arm64.c"
 
 echo "Configuring Mono CMake for iOS arm64..."
 mkdir -p "$BUILD_DIR"

@@ -68,10 +68,10 @@ internal static class RuntimeCallbackProbe
                 {
                     if (i % 2 == 0) { GC.Collect(); GC.WaitForPendingFinalizers(); }
                     var raw = Get(GCHandle.ToIntPtr(handle), name, out var variantType, out var register);
-                    Require(raw == expectedHandled && variantType == (int)expectedType,
+                    Require(raw == expectedHandled && (uint)register == (uint)expectedHandled && variantType == (int)expectedType,
                         $"property={name}, x0=0x{register:X16}, raw handled byte={raw} (expected {expectedHandled}), Variant type={variantType} (expected {(int)expectedType}), iteration={i}");
                     if (i == 0) GameplayDiagnostics.Result("callback:register:get:" + name, "observed",
-                        $"x0=0x{register:X16}; byte={raw}; Variant type={variantType}. Upper bits are diagnostic evidence, not independently treated as an ABI failure.");
+                        $"x0=0x{register:X16}; byte={raw}; Variant type={variantType}. Darwin ARM64 requires the byte result to be extended through w0; bits 32-63 are not asserted.");
                 }
             }
             finally { handle.Free(); }
@@ -95,7 +95,8 @@ internal static class RuntimeCallbackProbe
                 {
                     if (i % 2 == 0) GC.Collect();
                     var raw = Set(GCHandle.ToIntPtr(handle), name, 777, out var register);
-                    Require(raw == expectedHandled, $"setter={name}, x0=0x{register:X16}, raw handled byte={raw}, expected={expectedHandled}, iteration={i}");
+                    Require(raw == expectedHandled && (uint)register == (uint)expectedHandled,
+                        $"setter={name}, x0=0x{register:X16}, raw handled byte={raw}, expected extended w0={expectedHandled}, iteration={i}");
                     if (i == 0) GameplayDiagnostics.Result("callback:register:set:" + name, "observed", $"x0=0x{register:X16}; byte={raw}.");
                 }
             }

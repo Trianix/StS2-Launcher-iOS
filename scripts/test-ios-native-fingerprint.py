@@ -54,6 +54,17 @@ class NativeFingerprintTests(unittest.TestCase):
         (self.root / "patches/mono/runtime.json").write_text("updated pinned runtime recipe")
         self.assertNotEqual(first, module.fingerprint("mono"))
 
+    def test_ios_return_patch_invalidates_mono_only(self):
+        mono = module.fingerprint("mono")
+        godot = module.fingerprint("godot")
+        target = self.root / "patches/mono/ios-arm64-interpreter-returns.patch"
+        target.write_text("iOS return packing repair")
+        self.assertNotEqual(mono, module.fingerprint("mono"))
+        self.assertEqual(godot, module.fingerprint("godot"))
+        previous = module.fingerprint("mono")
+        target.write_text("revised iOS return packing")
+        self.assertNotEqual(previous, module.fingerprint("mono"))
+
     def test_record_rejects_changed_or_unfingerprinted_library(self):
         library = self.root / "libgodot.a"
         library.write_bytes(b"native archive")

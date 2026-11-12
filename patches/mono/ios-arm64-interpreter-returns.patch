@@ -1,0 +1,39 @@
+diff --git a/src/mono/mono/mini/mini-arm64.c b/src/mono/mono/mini/mini-arm64.c
+--- a/src/mono/mono/mini/mini-arm64.c
++++ b/src/mono/mono/mini/mini-arm64.c
+@@ -2194,6 +2194,35 @@
+ 			storage = arg_get_storage (ccontext, ainfo);
+ 
+ 		interp_cb->frame_arg_to_data ((MonoInterpFrameHandle)frame, sig, -1, storage);
++#if defined(TARGET_IOS)
++		/* Darwin requires integer returns narrower than 32 bits to be extended
++		 * through w0. frame_arg_to_data writes only the managed type's width,
++		 * leaving incoming argument bits in this saved register slot. The n2i
++		 * trampoline restores the whole slot, so false can otherwise be 0x200.
++		 * Normalize scalars only: byrefs, structs, pointers, 32/64-bit values,
++		 * floating-point and indirect returns retain their existing handling. */
++		if (!temp_size && ainfo->storage == ArgInIReg && !sig->ret->byref) {
++			MonoType *ret_type = mini_get_underlying_type (sig->ret);
++			switch (ret_type->type) {
++			case MONO_TYPE_I1:
++				*(host_mgreg_t*)storage = (guint32)(gint32)*(gint8*)storage;
++				break;
++			case MONO_TYPE_I2:
++				*(host_mgreg_t*)storage = (guint32)(gint32)*(gint16*)storage;
++				break;
++			case MONO_TYPE_BOOLEAN:
++			case MONO_TYPE_U1:
++				*(host_mgreg_t*)storage = *(guint8*)storage;
++				break;
++			case MONO_TYPE_CHAR:
++			case MONO_TYPE_U2:
++				*(host_mgreg_t*)storage = *(guint16*)storage;
++				break;
++			default:
++				break;
++			}
++		}
++#endif
+ 		if (temp_size)
+ 			arg_set_val (ccontext, ainfo, storage);
+ 	}

@@ -46,6 +46,8 @@ jobs:
           python3 scripts/test-write-ios-runtime-manifest.py
           python3 scripts/test-runtime-investigation-packaging.py
           python3 scripts/test-apply-godot-patches.py
+      - name: Verify pinned Mono interpreter return packing
+        run: python3 scripts/test-ios-mono-returns.py --download
       - name: Install pinned desktop Godot for behavior checks
         run: |
           curl -fSL --retry 3 https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable/Godot_v4.5.1-stable_mono_linux_x86_64.zip -o tmp/godot-mono.zip

@@ -31,6 +31,7 @@ def main():
         "bootstrapPck": bootstrap_pck,
         "monoRuntimeRecipe": root / "patches" / "mono" / "runtime.json",
         "monoPatch": root / "patches" / "mono" / "android-net9.patch",
+        "monoIosReturnPatch": root / "patches" / "mono" / "ios-arm64-interpreter-returns.patch",
         "godotPatch": root / "patches" / "godot" / "sts2-android-runtime.patch",
         "godotBuildScript": root / "scripts" / "build-godot-ios.sh",
         "monoBuildScript": root / "scripts" / "build-ios-mono.sh",

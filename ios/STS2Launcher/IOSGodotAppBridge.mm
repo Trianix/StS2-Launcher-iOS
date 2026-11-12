@@ -285,6 +285,15 @@ IOS_BRIDGE_EXPORT int sts2_test_native_callback_roundtrip(Sts2NativeCallbackFn f
 }
 
 // Independent ABI cases supplement the production Godot callback-table probe.
+#if defined(__aarch64__)
+// Seed all of x0, then tail-call the real UnmanagedCallersOnly entry. Returning
+// as uint64_t exposes the untouched register; a typed C byte call could mask it.
+IOS_BRIDGE_EXPORT __attribute__((naked)) uint64_t sts2_probe_return_register_v1(void *fn, uint64_t value) {
+    __asm__ volatile("mov x16, x0\n"
+                     "mov x0, x1\n"
+                     "br x16\n");
+}
+#endif
 struct Sts2ProbePair { float x; float y; };
 struct Sts2ProbeLarge { double x; double y; double z; int64_t tag; };
 IOS_BRIDGE_EXPORT int32_t sts2_probe_byte_v1(uint8_t (*fn)(int32_t), int32_t value) { return fn(value); }

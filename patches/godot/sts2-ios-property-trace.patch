@@ -5,7 +5,7 @@ index 265c2f1..c534a86 100644
 @@ -278,6 +278,16 @@ void Object::_postinitialize() {
  	notification(NOTIFICATION_POSTINITIALIZE);
  }
- 
+
 +static bool _sts2_property_trace_enabled(const StringName &p_name) {
 +#ifdef IOS_ENABLED
 +	static const bool enabled = OS::get_singleton() != nullptr &&
@@ -26,8 +26,8 @@ index 265c2f1..c534a86 100644
 -		if (script_instance->set(p_name, p_value)) {
 +		bool script_handled = script_instance->set(p_name, p_value);
 +		if (_sts2_property_trace_enabled(p_name)) {
-+			print_line(vformat("[STS2PropertyTrace] Object.set script property=%s handled=%d value_type=%d",
-+					String(p_name), script_handled ? 1 : 0, (int)p_value.get_type()));
++			print_line("[STS2PropertyTrace] Object.set script property=" + String(p_name) + " handled=" +
++					(script_handled ? "true" : "false") + " value_type=" + itos((int)p_value.get_type()));
 +		}
 +		if (script_handled) {
  			if (r_valid) {
@@ -40,8 +40,8 @@ index 265c2f1..c534a86 100644
 -		if (ClassDB::set_property(this, p_name, p_value, r_valid)) {
 +		bool class_handled = ClassDB::set_property(this, p_name, p_value, r_valid);
 +		if (_sts2_property_trace_enabled(p_name)) {
-+			print_line(vformat("[STS2PropertyTrace] Object.set classdb property=%s handled=%d value_type=%d",
-+					String(p_name), class_handled ? 1 : 0, (int)p_value.get_type()));
++			print_line("[STS2PropertyTrace] Object.set classdb property=" + String(p_name) + " handled=" +
++					(class_handled ? "true" : "false") + " value_type=" + itos((int)p_value.get_type()));
 +		}
 +		if (class_handled) {
  			return;
@@ -54,8 +54,8 @@ index 265c2f1..c534a86 100644
 -		if (script_instance->get(p_name, ret)) {
 +		bool script_handled = script_instance->get(p_name, ret);
 +		if (_sts2_property_trace_enabled(p_name)) {
-+			print_line(vformat("[STS2PropertyTrace] Object.get script property=%s handled=%d value_type=%d",
-+					String(p_name), script_handled ? 1 : 0, (int)ret.get_type()));
++			print_line("[STS2PropertyTrace] Object.get script property=" + String(p_name) + " handled=" +
++					(script_handled ? "true" : "false") + " value_type=" + itos((int)ret.get_type()));
 +		}
 +		if (script_handled) {
  			if (r_valid) {
@@ -68,8 +68,8 @@ index 265c2f1..c534a86 100644
 -		if (ClassDB::get_property(const_cast<Object *>(this), p_name, ret)) {
 +		bool class_handled = ClassDB::get_property(const_cast<Object *>(this), p_name, ret);
 +		if (_sts2_property_trace_enabled(p_name)) {
-+			print_line(vformat("[STS2PropertyTrace] Object.get classdb property=%s handled=%d value_type=%d",
-+					String(p_name), class_handled ? 1 : 0, (int)ret.get_type()));
++			print_line("[STS2PropertyTrace] Object.get classdb property=" + String(p_name) + " handled=" +
++					(class_handled ? "true" : "false") + " value_type=" + itos((int)ret.get_type()));
 +		}
 +		if (class_handled) {
  			if (r_valid) {
@@ -108,8 +108,8 @@ index 1ef2a0e..8506803 100644
 +	bool handled = GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set(
  			gchandle.get_intptr(), &p_name, &p_value);
 +	if (_sts2_property_trace_enabled(p_name)) {
-+		print_line(vformat("[STS2PropertyTrace] CSharpInstance.set property=%s handled=%d value_type=%d",
-+				String(p_name), handled ? 1 : 0, (int)p_value.get_type()));
++		print_line("[STS2PropertyTrace] CSharpInstance.set property=" + String(p_name) + " handled=" +
++				(handled ? "true" : "false") + " value_type=" + itos((int)p_value.get_type()));
 +	}
 +	return handled;
  }
@@ -120,9 +120,88 @@ index 1ef2a0e..8506803 100644
  	bool ret = GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get(
  			gchandle.get_intptr(), &p_name, &ret_value);
 +	if (_sts2_property_trace_enabled(p_name)) {
-+		print_line(vformat("[STS2PropertyTrace] CSharpInstance.get property=%s handled=%d value_type=%d",
-+				String(p_name), ret ? 1 : 0, (int)ret_value.get_type()));
++		print_line("[STS2PropertyTrace] CSharpInstance.get property=" + String(p_name) + " handled=" +
++				(ret ? "true" : "false") + " value_type=" + itos((int)ret_value.get_type()));
 +	}
  
  	if (ret) {
  		r_ret = ret_value;
+diff --git a/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs b/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs
+index d17b732..7525553 100644
+--- a/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs
++++ b/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs
+@@ -6,6 +6,20 @@ namespace Godot.Bridge
+ {
+     internal static class CSharpInstanceBridge
+     {
++        private static bool ShouldTraceProperty(StringName name)
++        {
++            string propertyName = name.ToString();
++            return Environment.GetEnvironmentVariable("STS2_GODOT_PROPERTY_TRACE") == "1" &&
++                (propertyName == "position" || propertyName == "scale" || propertyName == "modulate");
++        }
++
++        private static void TraceGet(StringName name, string branch, bool handled, Variant.Type valueType)
++        {
++            if (ShouldTraceProperty(name))
++            {
++                Console.WriteLine($"[STS2ManagedPropertyTrace] Get property={name} branch={branch} handled={handled} value_type={valueType}");
++            }
++        }
+         [UnmanagedCallersOnly]
+         internal static unsafe godot_bool Call(IntPtr godotObjectGCHandle, godot_string_name* method,
+             godot_variant** args, int argCount, godot_variant_call_error* refCallError, godot_variant* ret)
+@@ -92,15 +106,19 @@ namespace Godot.Bridge
+                 // Properties
+                 if (godotObject.GetGodotClassPropertyValue(CustomUnsafe.AsRef(name), out godot_variant outRetValue))
+                 {
++                    using Variant propertyValue = Variant.CreateCopyingBorrowed(outRetValue);
++                    TraceGet(CustomUnsafe.AsRef(name), "godot-property", true, propertyValue.VariantType);
+                     *outRet = outRetValue;
+                     return godot_bool.True;
+                 }
++                TraceGet(CustomUnsafe.AsRef(name), "godot-property", false, Variant.Type.Nil);
+ 
+                 // Signals
+                 if (godotObject.HasGodotClassSignal(CustomUnsafe.AsRef(name)))
+                 {
+                     godot_signal signal = new godot_signal(NativeFuncs.godotsharp_string_name_new_copy(*name), godotObject.GetInstanceId());
+                     *outRet = VariantUtils.CreateFromSignalTakingOwnershipOfDisposableValue(signal);
++                    TraceGet(CustomUnsafe.AsRef(name), "signal", true, Variant.Type.Signal);
+                     return godot_bool.True;
+                 }
+ 
+@@ -109,11 +127,13 @@ namespace Godot.Bridge
+                 {
+                     godot_callable method = new godot_callable(NativeFuncs.godotsharp_string_name_new_copy(*name), godotObject.GetInstanceId());
+                     *outRet = VariantUtils.CreateFromCallableTakingOwnershipOfDisposableValue(method);
++                    TraceGet(CustomUnsafe.AsRef(name), "method", true, Variant.Type.Callable);
+                     return godot_bool.True;
+                 }
+ 
+                 if (!godotObject.HasGodotClassMethod(GodotObject.MethodName._Get.NativeValue.DangerousSelfRef))
+                 {
++                    TraceGet(CustomUnsafe.AsRef(name), "no-custom-getter", false, Variant.Type.Nil);
+                     return godot_bool.False;
+                 }
+ 
+@@ -124,16 +144,19 @@ namespace Godot.Bridge
+ 
+                 if (ret.VariantType == Variant.Type.Nil)
+                 {
++                    TraceGet(CustomUnsafe.AsRef(name), "custom-getter", false, ret.VariantType);
+                     *outRet = default;
+                     return godot_bool.False;
+                 }
+ 
++                TraceGet(CustomUnsafe.AsRef(name), "custom-getter", true, ret.VariantType);
+                 *outRet = ret.CopyNativeVariant();
+                 return godot_bool.True;
+             }
+             catch (Exception e)
+             {
+                 ExceptionUtils.LogException(e);
++                TraceGet(CustomUnsafe.AsRef(name), "exception", false, Variant.Type.Nil);
+                 *outRet = default;
+                 return godot_bool.False;
+             }

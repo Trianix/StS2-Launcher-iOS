@@ -12,7 +12,7 @@ diff --git a/src/mono/mono/mini/mini-arm64.c b/src/mono/mono/mini/mini-arm64.c
 +		 * trampoline restores the whole slot, so false can otherwise be 0x200.
 +		 * Normalize scalars only: byrefs, structs, pointers, 32/64-bit values,
 +		 * floating-point and indirect returns retain their existing handling. */
-+		if (!temp_size && ainfo->storage == ArgInIReg && !sig->ret->byref) {
++		if (!temp_size && ainfo->storage == ArgInIReg && !m_type_is_byref (sig->ret)) {
 +			MonoType *ret_type = mini_get_underlying_type (sig->ret);
 +			switch (ret_type->type) {
 +			case MONO_TYPE_I1:

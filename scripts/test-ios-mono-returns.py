@@ -4,7 +4,8 @@
 --download verifies/applies the iOS patch to pinned upstream source, including a
 negative control. --source tests the actual prepared source before building Mono.
 The fixture replaces frame access and ABI metadata, not the function under test;
-physical-device UCO and live Godot callback tests remain required.
+it exposes the pinned byref accessor, not a nonexistent public byref field.
+Real Mono archive compilation and physical-device callback tests remain required.
 """
 import argparse
 import hashlib
@@ -53,7 +54,9 @@ enum { MONO_TYPE_VOID, MONO_TYPE_I1, MONO_TYPE_U1, MONO_TYPE_I2,
        MONO_TYPE_U2, MONO_TYPE_BOOLEAN, MONO_TYPE_CHAR, MONO_TYPE_I4,
        MONO_TYPE_I8, MONO_TYPE_PTR, MONO_TYPE_VALUETYPE, MONO_TYPE_R8 };
 enum { ArgInIReg, ArgVtypeInIRegs, ArgInFReg, ArgHFA, ArgVtypeByRef };
-typedef struct MonoType { int type, byref; struct MonoType *underlying; } MonoType;
+/* Model byrefs behind the pinned API. Deliberately omit a public byref field so
+ * this fixture cannot conceal invalid direct access in production code. */
+typedef struct MonoType { int type, fixture_is_byref; struct MonoType *underlying; } MonoType;
 typedef struct { MonoType *ret; } MonoMethodSignature;
 typedef struct { int storage, reg; } ArgInfo;
 typedef struct { ArgInfo ret; } CallInfo;
@@ -62,6 +65,9 @@ typedef struct { unsigned char bytes[32]; size_t size; } Frame;
 typedef struct {
     void (*frame_arg_to_data)(MonoInterpFrameHandle, MonoMethodSignature *, int, gpointer);
 } MonoEECallbacks;
+static int m_type_is_byref(const MonoType *type) {
+    return type->fixture_is_byref;
+}
 static MonoType *mini_get_underlying_type(MonoType *type) {
     return type->underlying ? type->underlying : type;
 }
@@ -114,7 +120,9 @@ static void scalar_case(const char *name, MonoType type, size_t width, uint64_t 
 int main(void) {
     MonoType i1={MONO_TYPE_I1,0,NULL}, u1={MONO_TYPE_U1,0,NULL};
     MonoType i2={MONO_TYPE_I2,0,NULL}, u2={MONO_TYPE_U2,0,NULL};
+    MonoType byref={MONO_TYPE_U1,1,NULL};
     assert(mini_get_underlying_type(&u1) == &u1);
+    assert(!m_type_is_byref(&u1) && m_type_is_byref(&byref));
     for (unsigned bits=0; bits<256; bits++) {
         scalar_case("sbyte", i1, 1, bits, (uint32_t)(int32_t)(int8_t)bits, ArgInIReg, 1);
         scalar_case("byte", u1, 1, bits, bits, ArgInIReg, 1);
@@ -132,7 +140,9 @@ int main(void) {
     scalar_case("int32", (MonoType){MONO_TYPE_I4,0,NULL}, 4, 0x87654321, 0, ArgInIReg, 0);
     scalar_case("int64", (MonoType){MONO_TYPE_I8,0,NULL}, 8, UINT64_C(0xfedcba9876543210), 0, ArgInIReg, 0);
     scalar_case("pointer", (MonoType){MONO_TYPE_PTR,0,NULL}, 8, UINT64_C(0x123456789abcdef0), 0, ArgInIReg, 0);
-    scalar_case("byref", (MonoType){MONO_TYPE_U1,1,NULL}, 8, UINT64_C(0x123456789abcdef0), 0, ArgInIReg, 0);
+    scalar_case("byref", byref, 8, UINT64_C(0x123456789abcdef0), 0, ArgInIReg, 0);
+    scalar_case("byref-enum", (MonoType){MONO_TYPE_VALUETYPE,1,&u1}, 8, UINT64_C(0xfedcba9876543210), 0, ArgInIReg, 0);
+    scalar_case("byref-short", (MonoType){MONO_TYPE_I2,1,NULL}, 8, UINT64_C(0x123456789abc8000), 0, ArgInIReg, 0);
     scalar_case("tiny-aggregate", (MonoType){MONO_TYPE_VALUETYPE,0,NULL}, 1, 7, 0, ArgVtypeInIRegs, 0);
     scalar_case("aggregate", (MonoType){MONO_TYPE_VALUETYPE,0,NULL}, 8, UINT64_C(0x123456789abcdef0), 0, ArgVtypeInIRegs, 0);
     CallContext context, original;
@@ -163,8 +173,9 @@ int main(void) {
 '''
 
 
-def compile_and_run(source, work, ios, expect_failure=False):
-    unit = work / ("returns-ios.c" if ios else "returns-android.c")
+def compile_fixture(source, work, ios, expect_compile_failure=False):
+    name = "returns-invalid-api.c" if expect_compile_failure else ("returns-ios.c" if ios else "returns-android.c")
+    unit = work / name
     unit.write_text(HARNESS.replace("/* PRODUCTION_FUNCTION */", return_function(source)), encoding="utf-8")
     executable = unit.with_suffix(".exe" if os.name == "nt" else "")
     compiler = shlex.split(os.environ.get("CC", "cc"), posix=os.name != "nt")
@@ -177,7 +188,18 @@ def compile_and_run(source, work, ios, expect_failure=False):
     else:
         options = ["-std=c11", "-O2", "-fno-strict-aliasing", "-Wall", "-Wextra", "-Werror",
                    "-D" + target, str(unit), "-o", str(executable)]
+    if expect_compile_failure:
+        result = subprocess.run(compiler + options, capture_output=True, text=True)
+        if result.returncode == 0 or "byref" not in result.stdout + result.stderr:
+            raise RuntimeError("Fixture did not reject invalid direct MonoType.byref access")
+        print("PASS: fixture rejects invalid direct MonoType.byref access at compile time")
+        return None
     subprocess.run(compiler + options, check=True)
+    return executable
+
+
+def compile_and_run(source, work, ios, expect_failure=False):
+    executable = compile_fixture(source, work, ios)
     result = subprocess.run([str(executable)], capture_output=True, text=True)
     if expect_failure:
         if result.returncode != 1 or "false: actual=0x123456789abcde00" not in result.stderr:
@@ -214,6 +236,11 @@ def main():
         source = path.read_text(encoding="utf-8")
         compile_and_run(source, work, ios=True)
         compile_and_run(source, work, ios=False)
+        accessor = "m_type_is_byref (sig->ret)"
+        if return_function(source).count(accessor) != 1:
+            raise RuntimeError("Expected one pinned byref accessor in the repaired return-packing function")
+        compile_fixture(source.replace(accessor, "sig->ret->byref"), work, ios=True,
+                        expect_compile_failure=True)
 
 
 if __name__ == "__main__":

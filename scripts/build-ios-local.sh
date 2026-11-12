@@ -229,6 +229,9 @@ mkdir -p "$ASSEMBLIES_DIR"
 
 cp -f "$MANAGED_PUBLISH/STS2Mobile.dll" "$ASSEMBLIES_DIR/"
 cp -f "$MANAGED_PUBLISH/STS2Mobile.dll" "$IOS_BUNDLE_BCL_DIR/"
+cp -f "$MANAGED_PUBLISH/RuntimeContractFixtures.dll" "$ASSEMBLIES_DIR/"
+cp -f "$MANAGED_PUBLISH/RuntimeContractFixtures.dll" "$IOS_BUNDLE_BCL_DIR/"
+cp -f "$GODOT_SOURCE_DIR/bin/sts2-callback-contract.json" "$IOS_BUNDLE_BCL_DIR/godot-callback-contract.json"
 
 for dll in SteamKit2.dll protobuf-net.dll protobuf-net.Core.dll System.IO.Hashing.dll ZstdSharp.dll Mono.Cecil.dll 0Harmony.dll GodotSharp.dll; do
     if [ -f "$MANAGED_PUBLISH/$dll" ]; then
@@ -313,6 +316,7 @@ cp -R "$APP_DIR" "$TMP_PAYLOAD/Payload/"
 
 (cd "$TMP_PAYLOAD" && zip -qr "$IPA_PATH" Payload)
 rm -rf "$TMP_PAYLOAD"
+python3 "$ROOT/scripts/verify-ios-investigation-bundle.py" "$IPA_PATH"
 
 # Generate SHA256 checksum
 shasum -a 256 "$IPA_PATH" > "$IPA_PATH.sha256"
@@ -320,3 +324,5 @@ shasum -a 256 "$IPA_PATH" > "$IPA_PATH.sha256"
 echo "=== Build Complete! ==="
 echo "IPA created at: $IPA_PATH"
 echo "Checksum: $(cat "$IPA_PATH.sha256")"
+printf 'One-shot runtime investigation marker\n' > "$ARTIFACTS_DIR/gameplay-property-probe.enabled"
+cp -f "$ROOT/docs/ios-runtime-investigation-testing.md" "$ARTIFACTS_DIR/RUNTIME-INVESTIGATION-TESTING.md"

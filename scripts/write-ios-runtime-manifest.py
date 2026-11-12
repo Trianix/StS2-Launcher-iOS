@@ -83,6 +83,8 @@ def main():
         "nativeFrameworkFiles": native_files,
         "downloadedDependencyArchives": downloaded,
         "assemblies": assemblies,
+        "godotCallbackContract": json.loads((bcl_dir / "godot-callback-contract.json").read_text(encoding="utf-8"))
+            if (bcl_dir / "godot-callback-contract.json").is_file() else {"status": "unavailable"},
     }
     output = bcl_dir / "runtime-provenance.json"
     output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

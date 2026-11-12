@@ -103,7 +103,7 @@ static BOOL STS2CopyFileAtomicallyIfChanged(NSString *sourcePath, NSString *dest
     NSArray<NSString *> *bclFiles = [fm contentsOfDirectoryAtPath:bclSource error:error];
     if (!bclFiles) return NO;
     NSArray<NSString *> *requiredAssemblies = @[
-        @"STS2Mobile.dll", @"SteamKit2.dll", @"0Harmony.dll", @"MonoMod.Core.dll",
+        @"STS2Mobile.dll", @"RuntimeContractFixtures.dll", @"SteamKit2.dll", @"0Harmony.dll", @"MonoMod.Core.dll",
         @"MonoMod.Utils.dll", @"MonoMod.Backports.dll", @"MonoMod.ILHelpers.dll",
         @"MonoMod.Iced.dll", @"Mono.Cecil.dll", @"protobuf-net.dll", @"protobuf-net.Core.dll",
         @"System.IO.Hashing.dll", @"System.Private.CoreLib.dll",

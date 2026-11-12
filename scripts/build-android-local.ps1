@@ -92,6 +92,7 @@ function Copy-ManagedDependency([string]$Name) {
 
 $managedDependencies = @(
     "STS2Mobile.dll",
+    "RuntimeContractFixtures.dll",
     "SteamKit2.dll",
     "protobuf-net.dll",
     "protobuf-net.Core.dll",

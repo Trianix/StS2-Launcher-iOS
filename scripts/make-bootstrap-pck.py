@@ -9,6 +9,7 @@ import os
 import sys
 import hashlib
 import struct
+from pathlib import Path
 from dataclasses import dataclass
 
 # PCK format constants
@@ -128,11 +129,15 @@ def make_project_binary():
 
 
 def make_bootstrap_files():
-    return [
+    files = [
         BootstrapFile("res://project.binary", make_project_binary()),
         BootstrapFile("res://project.godot", PROJECT_GODOT.encode("utf-8")),
         BootstrapFile("res://bootstrap.tscn", BOOTSTRAP_SCENE.encode("utf-8")),
     ]
+    fixtures = Path(__file__).resolve().parent.parent / "tools" / "RuntimeContractFixtures"
+    for name in ("RuntimeProbeFixture.cs", "runtime_probe.tscn"):
+        files.append(BootstrapFile("res://" + name, (fixtures / name).read_bytes()))
+    return files
 
 
 def encode_directory_entry(file, absolute_offset, file_base):

@@ -29,6 +29,8 @@ internal static partial class Program
             ("gameplay stabilization: errors retain phase", GameplayReportGroupsErrorsByPhase),
             ("gameplay stabilization: reports Mono execution mode", GameplayReportReportsMonoMode),
             ("gameplay stabilization: blocked steps remain blocked", GameplayReportDoesNotPromoteBlockedSteps),
+            ("runtime qualification: missing and blocked contracts cannot pass", RuntimeQualificationRequiresEveryGroup),
+            ("runtime qualification: packaged script has generated bindings", RuntimeFixtureHasGeneratedBindings),
             ("gameplay stabilization: test saves stay isolated", GameplaySessionRejectsEscapingPaths),
             ("gameplay stabilization: scene references reject ambiguity", SceneBindingRejectsAmbiguousCandidates),
             ("gameplay stabilization: required lookups preserve control flow", SceneBindingRewritesRequiredLookupOnly),

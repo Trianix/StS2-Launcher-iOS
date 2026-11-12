@@ -44,6 +44,8 @@ internal static class GodotSharpBootstrap
 
         NativeFuncs.Initialize(unmanagedCallbacks, unmanagedCallbacksSize);
         ManagedCallbacks.Create(outManagedCallbacks);
+        if (OperatingSystem.IsIOS() && System.Environment.GetEnvironmentVariable("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY") == "1")
+            Diagnostics.RuntimeCallbackProbe.CaptureRegistration(outManagedCallbacks);
         BootstrapTrace.Log("GodotSharpBootstrap.Initialize completed");
     }
 }

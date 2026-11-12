@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <GodotProjectDir>$(MSBuildProjectDirectory)/</GodotProjectDir>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="GodotSharp">
+      <HintPath>../../upstream/godot-export/.godot/mono/publish/arm64/GodotSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Godot.SourceGenerators" Version="4.5.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

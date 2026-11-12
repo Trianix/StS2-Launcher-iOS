@@ -138,16 +138,7 @@ public static partial class ModEntry
     {
         try
         {
-            await STS2Mobile.Diagnostics.GameplayPropertyProbe.RunAsync(host);
-            STS2Mobile.Diagnostics.ExceptionSelfTest.RunStandaloneNativeCallbackProbe(
-                (name, status, detail) =>
-                {
-                    if (status == "failed")
-                        STS2Mobile.Diagnostics.GameplayDiagnostics.Failure(name, new InvalidOperationException(detail));
-                    else
-                        STS2Mobile.Diagnostics.GameplayDiagnostics.Result(name, status, detail);
-                });
-            STS2Mobile.Diagnostics.GameplayDiagnostics.CompleteStandalonePropertyProbe();
+            await STS2Mobile.Diagnostics.RuntimeInvestigation.RunAsync(host);
         }
         catch (Exception ex)
         {

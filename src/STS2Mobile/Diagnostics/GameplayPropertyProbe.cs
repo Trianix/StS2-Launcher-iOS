@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Godot;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
@@ -21,14 +20,12 @@ internal static class GameplayPropertyProbe
             : "runtime-default-or-unknown";
     }
 
-    internal static async Task RunAsync(Node host)
+    internal static async Task RunAsync(Node host, bool includeGameScenes = true)
     {
         var scratch = new Control { Name = "GameplayPropertyProbe", MouseFilter = Control.MouseFilterEnum.Ignore };
         try
         {
             host.AddChild(scratch);
-            GameplayDiagnostics.Result("custom-export-property", "blocked",
-                "Requires a CSharpScript-backed scene instance; this mod-side probe constructs managed controls directly.");
             foreach (var factory in new Func<Control>[] { () => new Control(), () => new GameplayProbeControl(),
                 () => new NBackButton(), () => new NConfirmButton(), () => new NAscensionPanel() })
             {
@@ -43,7 +40,9 @@ internal static class GameplayPropertyProbe
             }
             // Probe the actual mounted scenes as well, without entering their
             // lifecycle. This catches serialized property/owner differences.
-            foreach (var path in new[] { "res://scenes/screens/main_menu.tscn", "res://scenes/screens/character_select_screen.tscn" })
+            foreach (var path in includeGameScenes
+                ? new[] { "res://scenes/screens/main_menu.tscn", "res://scenes/screens/character_select_screen.tscn" }
+                : Array.Empty<string>())
             {
                 if (!ResourceLoader.Exists(path))
                 {
@@ -75,7 +74,7 @@ internal static class GameplayPropertyProbe
             foreach (var descendant in Controls(child)) yield return descendant;
     }
 
-    private static async Task CheckAsync(Node host, Control target, string label)
+    internal static async Task CheckAsync(Node host, Control target, string label)
     {
         var originalPosition = target.Position;
         var originalScale = target.Scale;
@@ -135,6 +134,7 @@ internal static class GameplayPropertyProbe
                     var finished = false;
                     tween = host.CreateTween();
                     tween.Finished += () => finished = true;
+                    var completion = AwaitTweenFinished(host, tween);
                     Variant end = property == "position" ? Variant.From(new Vector2(20, 40))
                         : property == "scale" ? Variant.From(Vector2.One) : Variant.From(1f);
                     var before = target.GetIndexed(property);
@@ -143,15 +143,12 @@ internal static class GameplayPropertyProbe
                         $"TweenProperty returned null: target={target.GetType().FullName}, path={property}, initial={Describe(before)}, typedPosition={target.Position}, typedScale={target.Scale}, typedAlpha={target.Modulate.A}, end={Describe(end)}.");
                     tweener.SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine).FromCurrent();
                     tween.TweenCallback(Callable.From(() => callback = true));
-                    var watch = Stopwatch.StartNew();
-                    while (!finished && watch.Elapsed < TimeSpan.FromSeconds(2))
-                    {
-                        Require(GodotObject.IsInstanceValid(host) && host.IsInsideTree(), "Probe host exited.");
-                        var frame = NextFrame(host);
-                        if (await Task.WhenAny(frame, Task.Delay(2_000)) != frame)
-                            throw new TimeoutException("No process frame within 2 seconds.");
-                        await frame;
-                    }
+                    if (await Task.WhenAny(completion, Task.Delay(2_000)) != completion)
+                        throw new TimeoutException("Tween Finished await did not complete within two seconds.");
+                    await completion;
+                    // A signal await can resume inline while Godot is still
+                    // dispatching other subscribers to the same signal.
+                    await NextFrame(host);
                     Require(finished && callback, "Tween completion/callback did not arrive within 2 seconds.");
                     var value = target.GetIndexed(property);
                     Require(value.Equals(end), $"Tween final value mismatch: actual={Describe(value)}, expected={Describe(end)}.");
@@ -161,6 +158,26 @@ internal static class GameplayPropertyProbe
                 catch (Exception ex) { GameplayDiagnostics.Failure(label + ":tween:" + property, ex); }
                 finally { if (tween != null && tween.IsValid()) tween.Kill(); }
             }
+
+            Tween interpolationTween = null;
+            try
+            {
+                target.Position = Vector2.Zero;
+                interpolationTween = host.CreateTween();
+                interpolationTween.Pause();
+                var step = interpolationTween.TweenProperty(target, "position", new Vector2(100, 200), 1.0);
+                if (step == null)
+                    GameplayDiagnostics.Result(label + ":tween-interpolation", "blocked", "Position tweener could not be created; interpolation depends on property lookup.");
+                else
+                {
+                    step.SetTrans(Tween.TransitionType.Linear);
+                    interpolationTween.CustomStep(0.25);
+                    Require(target.Position.IsEqualApprox(new Vector2(25, 50)), "Quarter-time interpolation was not (25, 50): " + target.Position);
+                    GameplayDiagnostics.Result(label + ":tween-interpolation", "passed", "Deterministic quarter-time step produced the intermediate position.");
+                }
+            }
+            catch (Exception ex) { GameplayDiagnostics.Failure(label + ":tween-interpolation", ex); }
+            finally { if (interpolationTween != null && interpolationTween.IsValid()) interpolationTween.Kill(); }
 
             Tween cancelledTween = null;
             try
@@ -205,6 +222,7 @@ internal static class GameplayPropertyProbe
         await frame;
     }
     private static async Task AwaitFrame(Node host) => await host.ToSignal(host.GetTree(), SceneTree.SignalName.ProcessFrame);
+    private static async Task AwaitTweenFinished(Node host, Tween tween) => await host.ToSignal(tween, Tween.SignalName.Finished);
     private static void Require(bool success, string message)
     {
         if (!success) throw new InvalidOperationException(message);

@@ -13,6 +13,7 @@ fi
 
 source "$ROOT/scripts/godot-source-utils.sh"
 apply_godot_patches "$GODOT_DIR" "$ROOT"
+python3 "$ROOT/scripts/verify-godot-callback-contract.py" "$GODOT_DIR" "$GODOT_DIR/bin/sts2-callback-contract.json"
 
 if [ ! -f "$ROOT/venv/bin/activate" ]; then
     echo "ERROR: Expected the Godot build virtualenv at $ROOT/venv"

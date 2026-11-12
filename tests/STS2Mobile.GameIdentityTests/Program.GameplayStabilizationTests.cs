@@ -72,6 +72,39 @@ internal static partial class Program
         Equal(256, report.Observations.Count, "A long device session keeps bounded evidence.");
     }
 
+    private static void RuntimeQualificationRequiresEveryGroup()
+    {
+        var report = new GameplayDiagnosticReport();
+        var required = new[] { "properties", "callbacks" };
+        report.Observe("properties", "passed", "");
+        Equal("incomplete", RuntimeQualificationSummary.Create(report.Observations, required).Status, "Absent contracts cannot qualify.");
+        report.Observe("callbacks", "observed", "Started but did not complete");
+        Equal("incomplete", RuntimeQualificationSummary.Create(report.Observations, required).Status, "Starting a contract cannot qualify it.");
+        report.Observe("callbacks", "blocked", "No backend");
+        Equal(1, RuntimeQualificationSummary.Create(report.Observations, required).Incomplete, "Blocked required group is counted.");
+        report.Observe("callbacks", "failed", "Mismatch");
+        Equal("failed", RuntimeQualificationSummary.Create(report.Observations, required).Status, "Any required failure rejects qualification.");
+        report.Observe("callbacks", "passed", "Verified");
+        Equal("failed", RuntimeQualificationSummary.Create(report.Observations, required).Status, "A later observation cannot erase a failure in the same candidate.");
+        report = new GameplayDiagnosticReport();
+        report.Observe("properties", "passed", "");
+        report.Observe("callbacks", "passed", "");
+        report.Observe("unrelated", "blocked", "Gameplay is separate");
+        Equal("passed", RuntimeQualificationSummary.Create(report.Observations, required).Status, "Only completed required groups establish this gate.");
+        Equal("incomplete", RuntimeQualificationSummary.Create(report.Observations, Array.Empty<string>()).Status, "An empty required-contract list cannot qualify a runtime.");
+    }
+
+    private static void RuntimeFixtureHasGeneratedBindings()
+    {
+        using var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(typeof(STS2Mobile.RuntimeFixtures.RuntimeProbeFixture).Assembly.Location);
+        True(assembly.CustomAttributes.Any(a => a.AttributeType.Name == "AssemblyHasScriptsAttribute"), "Fixture assembly must register its generated scripts.");
+        var fixture = assembly.MainModule.GetType("STS2Mobile.RuntimeFixtures.RuntimeProbeFixture");
+        var path = fixture.CustomAttributes.Single(a => a.AttributeType.Name == "ScriptPathAttribute").ConstructorArguments[0].Value as string;
+        Equal("res://RuntimeProbeFixture.cs", path, "Packaged scene and generated script registration must use the same path.");
+        True(fixture.Methods.Any(m => m.Name == "GetGodotClassPropertyValue"), "Generated property dispatch must exist.");
+        True(fixture.Methods.Any(m => m.Name == "SetGodotClassPropertyValue"), "Generated setters must exist.");
+    }
+
     private static void GameplaySessionRejectsEscapingPaths()
     {
         var root = Path.Combine(Path.GetTempPath(), "gameplay-session-contract");

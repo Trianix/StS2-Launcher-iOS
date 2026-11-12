@@ -37,14 +37,28 @@ public partial class PreviewRoot : Control
         System.Environment.SetEnvironmentVariable("STS2_LAUNCHER_PREVIEW", "1");
         ParseArguments(OS.GetCmdlineUserArgs());
 
-        if (ReadBool("gameplay-stabilization-test", false))
+        if (ReadBool("gameplay-stabilization-test", false) || ReadBool("runtime-investigation-test", false))
         {
             var context = AssemblyLoadContext.GetLoadContext(typeof(PreviewRoot).Assembly) ?? AssemblyLoadContext.Default;
             var directory = ReadRequiredDirectory("managed-runtime-directory");
             Assembly? Resolve(AssemblyLoadContext loadContext, AssemblyName requestedName)
                 => ResolveManagedRuntimeDependency(loadContext, requestedName, directory);
             context.Resolving += Resolve;
-            try { await GameplayStabilizationRuntimeTest.RunAsync(this, ReadRequiredDirectory("report-directory"), Read("base-game-pck-path", "")); }
+            try
+            {
+                if (ReadBool("runtime-investigation-test", false))
+                {
+                    System.Environment.SetEnvironmentVariable("STS2_LAUNCHER_PREVIEW_DATA_DIR", ReadRequiredDirectory("report-directory"));
+                    if (!ProjectSettings.LoadResourcePack(ReadRequiredPath("runtime-fixture-pck"), false))
+                        throw new InvalidOperationException("Could not mount packaged runtime fixtures.");
+                    STS2Mobile.Diagnostics.GameplayDiagnostics.InitializeStandalonePropertyProbe(this);
+                    await STS2Mobile.Diagnostics.RuntimeInvestigation.RunAsync(this);
+                    GD.Print("RUNTIME_INVESTIGATION_COMPLETE");
+                    GetTree().Quit(STS2Mobile.Diagnostics.GameplayDiagnostics.ErrorOccurrences == 0 ? 0 : 1);
+                    return;
+                }
+                await GameplayStabilizationRuntimeTest.RunAsync(this, ReadRequiredDirectory("report-directory"), Read("base-game-pck-path", ""));
+            }
             finally { context.Resolving -= Resolve; }
             GetTree().Quit();
             return;

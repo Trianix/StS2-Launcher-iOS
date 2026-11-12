@@ -44,6 +44,7 @@ jobs:
         run: |
           python3 scripts/test-ios-native-fingerprint.py
           python3 scripts/test-write-ios-runtime-manifest.py
+          python3 scripts/test-runtime-investigation-packaging.py
       - name: Install pinned desktop Godot for behavior checks
         run: |
           curl -fSL --retry 3 https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable/Godot_v4.5.1-stable_mono_linux_x86_64.zip -o tmp/godot-mono.zip
@@ -61,6 +62,17 @@ jobs:
           name: gameplay-preflight-${{ github.sha }}
           path: artifacts/gameplay-stabilization/
           if-no-files-found: warn
+      - name: Verify consolidated runtime fixtures on desktop
+        shell: pwsh
+        run: |
+          ./scripts/test-gameplay-stabilization.ps1 -GodotPath tmp/godot-mono/Godot_v4.5.1-stable_mono_linux_x86_64/Godot_v4.5.1-stable_mono_linux.x86_64 -ManagedRuntimeDirectory tmp/ios-deps/gameplay-runtime -GameAssemblyPath tmp/ios-deps/gameplay-runtime/sts2.dll -SkipBuild -RuntimeInvestigation
+      - name: Upload runtime investigation preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-investigation-preflight-${{ github.sha }}
+          path: artifacts/runtime-investigation/
+          if-no-files-found: error
 
   build-ios:
     needs: validate-managed
@@ -162,4 +174,6 @@ jobs:
           path: |
             artifacts/ios/*.ipa
             artifacts/ios/*.sha256
+            artifacts/ios/gameplay-property-probe.enabled
+            artifacts/ios/RUNTIME-INVESTIGATION-TESTING.md
           if-no-files-found: error

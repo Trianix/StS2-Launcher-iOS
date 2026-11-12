@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Collections.Generic;
 using System.Linq;
@@ -20,10 +21,13 @@ internal static class GameplayDiagnostics
     private static string _directory;
     private static object _identity;
     private static bool _probeScheduled;
+    private static string _investigationDirectory;
+    private static string _investigationId;
     private static readonly HashSet<string> CapturedFailures = new();
     internal static bool ProbeEnabled { get; private set; }
     internal static string ReportPath => _directory == null ? null : Path.Combine(_directory, ReportName);
     internal static int ErrorOccurrences { get { lock (Gate) return Report.Errors.Sum(error => error.Count); } }
+    internal static GameplayDiagnosticReport.Observation[] Observations { get { lock (Gate) return Report.Observations.ToArray(); } }
 
     internal static void Initialize(Node game)
     {
@@ -68,11 +72,16 @@ internal static class GameplayDiagnostics
         var data = LauncherDiagnostics.DiagnosticDataDir;
         var documents = OperatingSystem.IsIOS() ? IOSGodotAppBridge.GetDocumentsDir() : data;
         _directory = string.IsNullOrWhiteSpace(documents) ? data : documents;
+        _investigationId = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        _investigationDirectory = Path.Combine(_directory, "runtime-investigations", _investigationId);
+        Directory.CreateDirectory(_investigationDirectory);
         ProbeEnabled = true;
         var patchAssembly = typeof(GameplayDiagnostics).Assembly;
         _identity = new
         {
             utc = DateTime.UtcNow,
+            investigationId = _investigationId,
+            investigationSchema = 1,
             build = patchAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
             patchSha256 = Hash(patchAssembly),
             gameSha256 = Hash(typeof(NGame).Assembly),
@@ -86,6 +95,8 @@ internal static class GameplayDiagnostics
             monoModeEvidence = "Requested mode only; confirm the active mode from the native Godot startup line in app_output.log.",
             monoModeNativeConfirmed = "unknown; the managed probe does not independently query Mono execution internals",
             os = OS.GetName(),
+            osVersion = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            nativeDevice = OperatingSystem.IsIOS() ? IOSGodotAppBridge.GetDeviceDiagnostics() : null,
             model = OS.GetModelName(),
             renderer = RenderingServer.GetCurrentRenderingMethod(),
             probeMode = "standalone-property-probe",
@@ -100,9 +111,9 @@ internal static class GameplayDiagnostics
 
     internal static void CompleteStandalonePropertyProbe()
     {
-        var failures = ErrorOccurrences;
-        var status = failures == 0 ? "passed" : "failed";
-        var detail = $"Property and tween probe completed with {failures} grouped error(s). Scene-loaded gameplay cases require the game PCK and are reported individually.";
+        var summary = RuntimeQualificationSummary.Create(Observations, RuntimeInvestigation.RequiredGroups);
+        var status = summary.Status == "incomplete" ? "blocked" : summary.Status;
+        var detail = $"Runtime contracts: {summary.Passed} groups passed, {summary.Failed} failed, {summary.Incomplete} incomplete. Gameplay regressions and combat performance require separate qualification.";
         lock (Gate)
         {
             Report.Phase = "standalone-probe-complete";
@@ -113,10 +124,34 @@ internal static class GameplayDiagnostics
 
         try
         {
-            var marker = Path.Combine(IOSGodotAppBridge.GetDocumentsDir(), StandaloneProbeMarkerName);
+            var marker = Path.Combine(_directory, StandaloneProbeMarkerName);
             if (File.Exists(marker)) File.Delete(marker);
         }
         catch (Exception ex) { BootstrapTrace.Log("Could not remove one-shot property-probe marker: " + ex.Message); }
+    }
+
+    internal static void ArchiveStandaloneInvestigation(Node host)
+    {
+        try
+        {
+            CaptureScreenshot(host, "runtime-investigation-complete");
+            foreach (var name in new[] { "app_output.log", "godot.log", "gameplay-runtime_investigation_complete.png" })
+            {
+                var source = Path.Combine(_directory, name);
+                if (!File.Exists(source)) continue;
+                using var input = new FileStream(source, FileMode.Open, System.IO.FileAccess.Read, FileShare.ReadWrite);
+                using var output = File.Create(Path.Combine(_investigationDirectory, name));
+                input.CopyTo(output);
+            }
+            var manifest = Path.Combine(AppPaths.AppPrivateDataDir, ".godot", "mono", "publish", "arm64", "runtime-provenance.json");
+            if (File.Exists(manifest)) File.Copy(manifest, Path.Combine(_investigationDirectory, "runtime-provenance.json"), true);
+            Result("evidence:archive", "observed", "Snapshot folder: runtime-investigations/" + _investigationId);
+            ZipFile.CreateFromDirectory(_investigationDirectory, _investigationDirectory + ".zip");
+        }
+        catch (Exception ex)
+        {
+            Result("evidence:archive", "blocked", "Per-run JSON is preserved, but bundle export failed: " + ex.Message);
+        }
     }
 
     internal static void Checkpoint(string stage, Node node)
@@ -281,9 +316,13 @@ internal static class GameplayDiagnostics
             File.WriteAllText(target + ".tmp", JsonSerializer.Serialize(new
             {
                 identity = _identity, phase = Report.Phase, lastCheckpoint = Report.LastCheckpoint,
+                runtimeQualification = _investigationDirectory == null ? null : RuntimeQualificationSummary.Create(Report.Observations, RuntimeInvestigation.RequiredGroups),
+                releaseQualification = _investigationDirectory == null ? null : "incomplete: game regression, cross-platform and sustained combat evidence required",
                 observations = Report.Observations, errors = Report.Errors,
             }, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(target + ".tmp", target, overwrite: true);
+            if (_investigationDirectory != null)
+                File.Copy(target, Path.Combine(_investigationDirectory, "runtime-investigation.json"), overwrite: true);
         }
         catch (Exception ex) { BootstrapTrace.Log("Gameplay report write failed: " + ex.Message); }
     }

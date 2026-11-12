@@ -7,6 +7,7 @@
 #import <unistd.h>
 #import <fcntl.h>
 #import <errno.h>
+#import <mach/mach.h>
 #include <unordered_map>
 
 extern "C" {
@@ -281,6 +282,23 @@ IOS_BRIDGE_EXPORT int* __errno_location(void) {
 IOS_BRIDGE_EXPORT int sts2_test_native_callback_roundtrip(Sts2NativeCallbackFn fn, int val) {
     if (!fn) return -1;
     return fn(val);
+}
+
+// Independent ABI cases supplement the production Godot callback-table probe.
+struct Sts2ProbePair { float x; float y; };
+struct Sts2ProbeLarge { double x; double y; double z; int64_t tag; };
+IOS_BRIDGE_EXPORT int32_t sts2_probe_byte_v1(uint8_t (*fn)(int32_t), int32_t value) { return fn(value); }
+IOS_BRIDGE_EXPORT int64_t sts2_probe_int64_v1(int64_t (*fn)(int64_t), int64_t value) { return fn(value); }
+IOS_BRIDGE_EXPORT float sts2_probe_float_v1(float (*fn)(float), float value) { return fn(value); }
+IOS_BRIDGE_EXPORT double sts2_probe_double_v1(double (*fn)(double), double value) { return fn(value); }
+IOS_BRIDGE_EXPORT Sts2ProbePair sts2_probe_pair_v1(Sts2ProbePair (*fn)(Sts2ProbePair), Sts2ProbePair value) { return fn(value); }
+IOS_BRIDGE_EXPORT Sts2ProbeLarge sts2_probe_large_v1(Sts2ProbeLarge (*fn)(Sts2ProbeLarge), Sts2ProbeLarge value) { return fn(value); }
+IOS_BRIDGE_EXPORT void *sts2_probe_pointer_v1(void *(*fn)(void *), void *value) { return fn(value); }
+IOS_BRIDGE_EXPORT int32_t sts2_probe_thermal_v1(void) { return (int32_t)[NSProcessInfo processInfo].thermalState; }
+IOS_BRIDGE_EXPORT uint64_t sts2_probe_footprint_v1(void) {
+    task_vm_info_data_t info = {};
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    return task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) == KERN_SUCCESS ? info.phys_footprint : 0;
 }
 
 struct Sts2InterpMethod {

@@ -1,0 +1,85 @@
+--- a/modules/mono/csharp_script.cpp
++++ b/modules/mono/csharp_script.cpp
+@@ -56,6 +56,7 @@
+ #include "core/os/os.h"
+ #include "core/os/thread.h"
+ #include "core/string/print_string.h"
++#include <cstddef>
+ #include "servers/text_server.h"
+ 
+ #ifdef TOOLS_ENABLED
+@@ -1493,6 +1494,74 @@
+ 	return owner;
+ }
+ 
++
++#if defined(IOS_ENABLED) && defined(__aarch64__)
++
++// Diagnostic-only call with the production callback's three pointer arguments.
++// Preserve the complete x0 return register before either byte truncation or C++
++// bool assumptions. This shim does not replace any production callback/stub.
++static __attribute__((naked, noinline, used)) uint64_t _sts2_capture_callback_register(
++		void *callback, void *handle, const void *name, void *value) {
++	__asm__ volatile (
++		"stp x29, x30, [sp, #-16]!\n"
++		"mov x29, sp\n"
++		"mov x16, x0\n"
++		"mov x0, x1\n"
++		"mov x1, x2\n"
++		"mov x2, x3\n"
++		"blr x16\n"
++		"ldp x29, x30, [sp], #16\n"
++		"ret\n"
++	);
++}
++
++// Diagnostic API v1. Invoke the LIVE Godot callback table with its managed byte
++// return representation, before C++ bool assumptions can hide a noncanonical byte.
++// No fallback or return-value normalization is installed by this investigation.
++extern "C" __attribute__((used, visibility("default"))) int32_t sts2_ios_callback_layout_v1(int32_t field) {
++	using Table = GDMonoCache::ManagedCallbacks;
++	switch (field) {
++		case 1: return sizeof(Table);
++		case 2: return offsetof(Table, CSharpInstanceBridge_Get);
++		case 3: return offsetof(Table, CSharpInstanceBridge_Set);
++		case 4: return sizeof(Variant);
++		case 5: return alignof(Variant);
++		case 6: return sizeof(bool);
++		case 7: return sizeof(GCHandleIntPtr);
++		case 8: return sizeof(void *);
++		default: return -1;
++	}
++}
++
++extern "C" __attribute__((used, visibility("default"))) void *sts2_ios_callback_address_v1(int32_t setter) {
++	return setter ? reinterpret_cast<void *>(GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set)
++			: reinterpret_cast<void *>(GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get);
++}
++
++extern "C" __attribute__((used, visibility("default"))) int32_t sts2_ios_callback_get_v1(void *handle, const char *property, int32_t *variant_type, uint64_t *raw_register) {
++	if (!handle || !property || !variant_type || !raw_register || !GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get) return -1;
++	StringName name(property);
++	Variant value;
++	*raw_register = _sts2_capture_callback_register(
++			reinterpret_cast<void *>(GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get), handle, &name, &value);
++	uint8_t raw = static_cast<uint8_t>(*raw_register);
++	*variant_type = static_cast<int32_t>(value.get_type());
++	print_line("[STS2CallbackAudit] Get property=" + String(name) + " raw_register=" + String::num_uint64(*raw_register, 16) + " raw_byte=" + itos(raw) + " variant_type=" + itos(*variant_type));
++	return raw;
++}
++extern "C" __attribute__((used, visibility("default"))) int32_t sts2_ios_callback_set_v1(void *handle, const char *property, int64_t number, uint64_t *raw_register) {
++	if (!handle || !property || !raw_register || !GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set) return -1;
++	StringName name(property);
++	Variant value(number);
++	*raw_register = _sts2_capture_callback_register(
++			reinterpret_cast<void *>(GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set), handle, &name, &value);
++	uint8_t raw = static_cast<uint8_t>(*raw_register);
++	print_line("[STS2CallbackAudit] Set property=" + String(name) + " raw_register=" + String::num_uint64(*raw_register, 16) + " raw_byte=" + itos(raw));
++	return raw;
++}
++
++#endif
++
+ static bool _sts2_property_trace_enabled(const StringName &p_name) {
+ #ifdef IOS_ENABLED
+ 	static const bool enabled = OS::get_singleton() != nullptr &&

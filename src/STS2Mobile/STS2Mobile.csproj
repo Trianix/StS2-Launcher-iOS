@@ -3,8 +3,10 @@
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>STS2Mobile</AssemblyName>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../tools/RuntimeContractFixtures/RuntimeContractFixtures.csproj" />
     <Reference Include="0Harmony">
       <HintPath>../../upstream/godot-export/.godot/mono/publish/arm64/0Harmony.dll</HintPath>
       <Private>false</Private>

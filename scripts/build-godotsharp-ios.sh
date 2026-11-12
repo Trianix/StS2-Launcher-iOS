@@ -28,8 +28,14 @@ case "$host_arch" in
 esac
 
 jobs="$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+CCACHE_OPTS=""
+if command -v ccache >/dev/null 2>&1; then
+    echo "ccache detected: $(ccache --version | head -n 1)"
+    CCACHE_OPTS="c_compiler_launcher=ccache cpp_compiler_launcher=ccache"
+fi
+
 echo "Building Godot macOS editor for glue generation (arch=$scons_arch)..."
-(cd "$GODOT_DIR" && scons platform=macos arch="$scons_arch" target=editor module_mono_enabled=yes vulkan=no -j"$jobs")
+(cd "$GODOT_DIR" && scons platform=macos arch="$scons_arch" target=editor module_mono_enabled=yes vulkan=no $CCACHE_OPTS -j"$jobs")
 
 editor="$GODOT_DIR/bin/godot.macos.editor.$scons_arch.mono"
 if [ ! -x "$editor" ]; then

@@ -130,22 +130,30 @@ diff --git a/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceB
 index d17b732..7525553 100644
 --- a/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs
 +++ b/modules/mono/glue/GodotSharp/GodotSharp/Core/Bridge/CSharpInstanceBridge.cs
-@@ -6,6 +6,20 @@ namespace Godot.Bridge
+@@ -6,6 +6,28 @@ namespace Godot.Bridge
  {
      internal static class CSharpInstanceBridge
      {
-+        private static bool ShouldTraceProperty(StringName name)
++        private static void TraceGet(godot_string_name nativeName, string branch, bool handled, Variant.Type valueType)
 +        {
-+            string propertyName = name.ToString();
-+            return Environment.GetEnvironmentVariable("STS2_GODOT_PROPERTY_TRACE") == "1" &&
-+                (propertyName == "position" || propertyName == "scale" || propertyName == "modulate");
-+        }
-+
-+        private static void TraceGet(StringName name, string branch, bool handled, Variant.Type valueType)
-+        {
-+            if (ShouldTraceProperty(name))
++            if (System.Environment.GetEnvironmentVariable("STS2_GODOT_PROPERTY_TRACE") != "1")
 +            {
-+                Console.WriteLine($"[STS2ManagedPropertyTrace] Get property={name} branch={branch} handled={handled} value_type={valueType}");
++                return;
++            }
++
++            try
++            {
++                using StringName managedName = StringName.CreateTakingOwnershipOfDisposableValue(
++                    NativeFuncs.godotsharp_string_name_new_copy(nativeName));
++                string propertyName = managedName.ToString();
++                if (propertyName == "position" || propertyName == "scale" || propertyName == "modulate")
++                {
++                    Console.WriteLine($"[STS2ManagedPropertyTrace] Get property={propertyName} branch={branch} handled={handled} value_type={valueType}");
++                }
++            }
++            catch (Exception e)
++            {
++                ExceptionUtils.LogException(e);
 +            }
 +        }
          [UnmanagedCallersOnly]

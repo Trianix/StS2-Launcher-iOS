@@ -13,7 +13,7 @@ def fingerprint(kind):
     inputs = [Path(__file__), ROOT / f"scripts/build-{kind}-ios.sh"] if kind == "godot" else [Path(__file__), ROOT / "scripts/build-ios-mono.sh"]
     inputs += sorted((ROOT / "patches" / ("godot" if kind == "godot" else "mono")).rglob("*"))
     if kind == "godot":
-        inputs += [ROOT / "scripts/setup-godot-source.sh", ROOT / "scripts/godot-source-utils.sh", ROOT / "scripts/requirements-godot-build.txt"]
+        inputs += [ROOT / "scripts/setup-godot-source.sh", ROOT / "scripts/godot-source-utils.sh", ROOT / "scripts/apply-godot-patches.py", ROOT / "scripts/requirements-godot-build.txt"]
     else:
         inputs += [ROOT / "patches/mono/runtime.json"]
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs if p.is_file()}

@@ -42,27 +42,8 @@ function Apply-GodotPatches {
         return
     }
 
-    $patches = Get-ChildItem -LiteralPath $patchDir -Filter "*.patch" | Sort-Object Name
-    foreach ($patch in $patches) {
-        Push-Location $GodotDir
-        try {
-            if (Test-GodotGitApply -Arguments @("apply", "--check", "--ignore-whitespace", $patch.FullName)) {
-                Write-Host "Applying Godot patch: $($patch.Name)"
-                & git apply --ignore-whitespace $patch.FullName
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Failed to apply Godot patch: $($patch.FullName)"
-                }
-                continue
-            }
-
-            if (Test-GodotGitApply -Arguments @("apply", "--reverse", "--check", "--ignore-whitespace", $patch.FullName)) {
-                Write-Host "Godot patch already applied: $($patch.Name)"
-                continue
-            }
-
-            throw "Godot patch cannot be applied cleanly: $($patch.FullName)"
-        } finally {
-            Pop-Location
-        }
+    & python (Join-Path $PSScriptRoot "apply-godot-patches.py") $GodotDir $patchDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Godot patch stack validation failed. See the diagnostic above."
     }
 }

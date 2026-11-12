@@ -45,6 +45,7 @@ jobs:
           python3 scripts/test-ios-native-fingerprint.py
           python3 scripts/test-write-ios-runtime-manifest.py
           python3 scripts/test-runtime-investigation-packaging.py
+          python3 scripts/test-apply-godot-patches.py
       - name: Install pinned desktop Godot for behavior checks
         run: |
           curl -fSL --retry 3 https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable/Godot_v4.5.1-stable_mono_linux_x86_64.zip -o tmp/godot-mono.zip
@@ -117,7 +118,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ios/libs/libgodot.ios.template_release.arm64.a*
-          key: ios-godot-v2-${{ steps.toolchain.outputs.id }}-${{ hashFiles('scripts/build-godot-ios.sh', 'scripts/setup-godot-source.sh', 'scripts/godot-source-utils.sh', 'scripts/requirements-godot-build.txt', 'scripts/ios-native-fingerprint.py', 'patches/godot/**') }}
+          key: ios-godot-v2-${{ steps.toolchain.outputs.id }}-${{ hashFiles('scripts/build-godot-ios.sh', 'scripts/setup-godot-source.sh', 'scripts/godot-source-utils.sh', 'scripts/apply-godot-patches.py', 'scripts/requirements-godot-build.txt', 'scripts/ios-native-fingerprint.py', 'patches/godot/**') }}
 
       - name: Install SCons & Ninja
         run: |

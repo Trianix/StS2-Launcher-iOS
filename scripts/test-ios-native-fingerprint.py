@@ -16,7 +16,7 @@ class NativeFingerprintTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         for relative in ("scripts/ios-native-fingerprint.py", "scripts/build-godot-ios.sh", "scripts/build-ios-mono.sh",
-                         "scripts/setup-godot-source.sh", "scripts/godot-source-utils.sh", "scripts/requirements-godot-build.txt",
+                         "scripts/setup-godot-source.sh", "scripts/godot-source-utils.sh", "scripts/apply-godot-patches.py", "scripts/requirements-godot-build.txt",
                          "patches/godot/runtime.patch", "patches/mono/runtime.json"):
             target = self.root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +43,11 @@ class NativeFingerprintTests(unittest.TestCase):
         managed.parent.mkdir(parents=True)
         managed.write_text("managed fix")
         self.assertEqual(first, module.fingerprint("godot"))
+
+    def test_patch_applicator_changes_invalidate_native_reuse(self):
+        first = module.fingerprint("godot")
+        (self.root / "scripts/apply-godot-patches.py").write_text("new stack validation")
+        self.assertNotEqual(first, module.fingerprint("godot"))
 
     def test_mono_runtime_manifest_changes_invalidate_native_reuse(self):
         first = module.fingerprint("mono")

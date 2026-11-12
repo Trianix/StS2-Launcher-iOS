@@ -101,8 +101,15 @@ internal static class GameplayDiagnostics
     internal static void CompleteStandalonePropertyProbe()
     {
         var failures = ErrorOccurrences;
-        Result("standalone-probe:complete", failures == 0 ? "passed" : "failed",
-            $"Property and tween probe completed with {failures} grouped error(s). Scene-loaded gameplay cases require the game PCK and are reported individually.");
+        var status = failures == 0 ? "passed" : "failed";
+        var detail = $"Property and tween probe completed with {failures} grouped error(s). Scene-loaded gameplay cases require the game PCK and are reported individually.";
+        lock (Gate)
+        {
+            Report.Phase = "standalone-probe-complete";
+            Report.Observe("standalone-probe:complete", status, detail, advancesCheckpoint: false);
+            Persist();
+        }
+        PatchHelper.Log($"[GameplayProbe] standalone-probe:complete {status}: {detail}");
 
         try
         {

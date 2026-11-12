@@ -389,6 +389,7 @@ static NSArray *sts2_determine_active_godot_cmdline() {
                 unsetenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY");
             } else {
                 NSLog(@"[STS2Launcher iOS] Running one-shot standalone property probe from %@", bootstrapPath);
+                setenv("STS2_GODOT_PROPERTY_TRACE", "1", 1);
                 setenv("STS2_LAUNCHER_BOOTSTRAP", "1", 1);
                 setenv("STS2_AUTO_LAUNCH_GAME", "0", 1);
                 setenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY", "1", 1);
@@ -396,6 +397,7 @@ static NSArray *sts2_determine_active_godot_cmdline() {
                 return;
             }
         }
+        unsetenv("STS2_GODOT_PROPERTY_TRACE");
         unsetenv("STS2_GAMEPLAY_PROPERTY_PROBE_ONLY");
         
         // 1. Check for pending game launch marker written by standalone launcher

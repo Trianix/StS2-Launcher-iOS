@@ -1,0 +1,128 @@
+diff --git a/core/object/object.cpp b/core/object/object.cpp
+index 265c2f1..c534a86 100644
+--- a/core/object/object.cpp
++++ b/core/object/object.cpp
+@@ -278,6 +278,16 @@ void Object::_postinitialize() {
+ 	notification(NOTIFICATION_POSTINITIALIZE);
+ }
+ 
++static bool _sts2_property_trace_enabled(const StringName &p_name) {
++#ifdef IOS_ENABLED
++	static const bool enabled = OS::get_singleton() != nullptr &&
++			OS::get_singleton()->get_environment("STS2_GODOT_PROPERTY_TRACE") == "1";
++	return enabled && (p_name == "position" || p_name == "scale" || p_name == "modulate");
++#else
++	return false;
++#endif
++}
++
+ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid) {
+ #ifdef TOOLS_ENABLED
+ 
+@@ -285,7 +295,12 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
+ #endif
+ 
+ 	if (script_instance) {
+-		if (script_instance->set(p_name, p_value)) {
++		bool script_handled = script_instance->set(p_name, p_value);
++		if (_sts2_property_trace_enabled(p_name)) {
++			print_line(vformat("[STS2PropertyTrace] Object.set script property=%s handled=%d value_type=%d",
++					String(p_name), script_handled ? 1 : 0, (int)p_value.get_type()));
++		}
++		if (script_handled) {
+ 			if (r_valid) {
+ 				*r_valid = true;
+ 			}
+@@ -304,7 +319,12 @@ void Object::set(const StringName &p_name, const Variant &p_value, bool *r_valid
+ 
+ 	// Try built-in setter.
+ 	{
+-		if (ClassDB::set_property(this, p_name, p_value, r_valid)) {
++		bool class_handled = ClassDB::set_property(this, p_name, p_value, r_valid);
++		if (_sts2_property_trace_enabled(p_name)) {
++			print_line(vformat("[STS2PropertyTrace] Object.set classdb property=%s handled=%d value_type=%d",
++					String(p_name), class_handled ? 1 : 0, (int)p_value.get_type()));
++		}
++		if (class_handled) {
+ 			return;
+ 		}
+ 	}
+@@ -365,7 +385,12 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
+ 	Variant ret;
+ 
+ 	if (script_instance) {
+-		if (script_instance->get(p_name, ret)) {
++		bool script_handled = script_instance->get(p_name, ret);
++		if (_sts2_property_trace_enabled(p_name)) {
++			print_line(vformat("[STS2PropertyTrace] Object.get script property=%s handled=%d value_type=%d",
++					String(p_name), script_handled ? 1 : 0, (int)ret.get_type()));
++		}
++		if (script_handled) {
+ 			if (r_valid) {
+ 				*r_valid = true;
+ 			}
+@@ -383,7 +408,12 @@ Variant Object::get(const StringName &p_name, bool *r_valid) const {
+ 
+ 	// Try built-in getter.
+ 	{
+-		if (ClassDB::get_property(const_cast<Object *>(this), p_name, ret)) {
++		bool class_handled = ClassDB::get_property(const_cast<Object *>(this), p_name, ret);
++		if (_sts2_property_trace_enabled(p_name)) {
++			print_line(vformat("[STS2PropertyTrace] Object.get classdb property=%s handled=%d value_type=%d",
++					String(p_name), class_handled ? 1 : 0, (int)ret.get_type()));
++		}
++		if (class_handled) {
+ 			if (r_valid) {
+ 				*r_valid = true;
+ 			}
+diff --git a/modules/mono/csharp_script.cpp b/modules/mono/csharp_script.cpp
+index 1ef2a0e..8506803 100644
+--- a/modules/mono/csharp_script.cpp
++++ b/modules/mono/csharp_script.cpp
+@@ -55,6 +55,7 @@
+ #include "core/os/mutex.h"
+ #include "core/os/os.h"
+ #include "core/os/thread.h"
++#include "core/string/print_string.h"
+ #include "servers/text_server.h"
+ 
+ #ifdef TOOLS_ENABLED
+@@ -1492,11 +1493,26 @@ Object *CSharpInstance::get_owner() {
+ 	return owner;
+ }
+ 
++static bool _sts2_property_trace_enabled(const StringName &p_name) {
++#ifdef IOS_ENABLED
++	static const bool enabled = OS::get_singleton() != nullptr &&
++			OS::get_singleton()->get_environment("STS2_GODOT_PROPERTY_TRACE") == "1";
++	return enabled && (p_name == "position" || p_name == "scale" || p_name == "modulate");
++#else
++	return false;
++#endif
++}
++
+ bool CSharpInstance::set(const StringName &p_name, const Variant &p_value) {
+ 	ERR_FAIL_COND_V(script.is_null(), false);
+ 
+-	return GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set(
++	bool handled = GDMonoCache::managed_callbacks.CSharpInstanceBridge_Set(
+ 			gchandle.get_intptr(), &p_name, &p_value);
++	if (_sts2_property_trace_enabled(p_name)) {
++		print_line(vformat("[STS2PropertyTrace] CSharpInstance.set property=%s handled=%d value_type=%d",
++				String(p_name), handled ? 1 : 0, (int)p_value.get_type()));
++	}
++	return handled;
+ }
+ 
+ bool CSharpInstance::get(const StringName &p_name, Variant &r_ret) const {
+@@ -1506,6 +1522,10 @@ bool CSharpInstance::get(const StringName &p_name, Variant &r_ret) const {
+ 
+ 	bool ret = GDMonoCache::managed_callbacks.CSharpInstanceBridge_Get(
+ 			gchandle.get_intptr(), &p_name, &ret_value);
++	if (_sts2_property_trace_enabled(p_name)) {
++		print_line(vformat("[STS2PropertyTrace] CSharpInstance.get property=%s handled=%d value_type=%d",
++				String(p_name), ret ? 1 : 0, (int)ret_value.get_type()));
++	}
+ 
+ 	if (ret) {
+ 		r_ret = ret_value;

@@ -170,7 +170,13 @@ internal static class GameplayPropertyProbe
                 var end = new Vector2(700, 900);
                 cancelledTween = host.CreateTween();
                 cancelledTween.Finished += () => finished = true;
-                cancelledTween.TweenProperty(target, "position", end, 10.0);
+                var positionTweener = cancelledTween.TweenProperty(target, "position", end, 10.0);
+                if (positionTweener == null)
+                {
+                    GameplayDiagnostics.Result(label + ":tween-cancel", "blocked",
+                        "Could not create the position tweener, so cancellation behavior cannot be isolated from the property contract failure.");
+                    return;
+                }
                 cancelledTween.TweenCallback(Callable.From(() => callback = true));
                 await NextFrame(host);
                 cancelledTween.Kill();
